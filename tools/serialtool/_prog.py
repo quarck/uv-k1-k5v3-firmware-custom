@@ -16,11 +16,17 @@
 
 from serial import Serial
 import msg as mm
+import _link as ll
 from datetime import datetime
 import math
 
 
 _QUIT = "quit"
+
+# The version field the device reports in its 0x0518 beacon is 16 bytes
+# (buf[20:36], see _Init.get_bl_ver), so the 0x0530 reply carries 16 too.
+# Replying with a shorter field truncates versions such as "7.00.07".
+BL_VER_LEN = 16
 
 
 class Programmer:
@@ -94,11 +100,15 @@ class _Init(_State):
 
         self.last_ts = 0  # Timestamp of last message, in 1/100 sec
         self.acc = 0
+        self.deadline = ll.Deadline("the device to announce itself")
 
-    def loop(self) -> _State | None:
+    def loop(self) -> _State | str | None:
 
         msg = self.recv_msg()
         if not msg:
+            if self.deadline.expired():
+                self.deadline.give_up(dfu_expected=True)
+                return _QUIT
             return None
 
         ts = _timestamp()
@@ -109,6 +119,7 @@ class _Init(_State):
         # _print_msg(msg)
 
         if mm.MSG_NOTIFY_DEV_INFO != msg.get_msg_type():
+            self.deadline.note(msg.get_msg_type())
             self.acc = 0
             return None
 
@@ -126,6 +137,7 @@ class _Init(_State):
             print("Establishing contact to device..")
             _Init.print_dev_info(msg)
 
+        self.deadline.extend()
         self.acc += 1
         if self.acc < 5:
             return None
@@ -134,7 +146,13 @@ class _Init(_State):
 
         bl_ver = _Init.get_bl_ver(msg)
         bl_ver2 = self.prog.bl_ver
-        if "*" != bl_ver2 and bl_ver != bl_ver2:
+
+        if bl_ver2 is None:
+            # Nothing was requested on the command line: echo back what the
+            # device just told us, rather than a placeholder it may reject.
+            print("Using the BL version reported by the device: '{}'".format(bl_ver))
+            self.prog.bl_ver = bl_ver
+        elif "*" != bl_ver2 and bl_ver != bl_ver2:
             print(
                 "!!! WARNING: BL version does not match! Expecting {}, actually {}".format(
                     bl_ver2, bl_ver
@@ -175,22 +193,31 @@ class _Handshake(_State):
         super().__init__(prog)
 
         bl_ver = prog.bl_ver
-        if len(bl_ver) > 4:
-            bl_ver = bl_ver[:4]
+        if bl_ver is None or "*" == bl_ver:
+            bl_ver = ""
+        if len(bl_ver) > BL_VER_LEN:
+            bl_ver = bl_ver[:BL_VER_LEN]
         self.bl_ver = bl_ver
 
         self.acc = 0
+        self.deadline = ll.Deadline("the handshake")
 
-    def loop(self) -> _State | None:
+    def loop(self) -> _State | str | None:
         msg = self.recv_msg()
         if not msg:
+            if self.deadline.expired():
+                self.deadline.give_up(dfu_expected=True)
+                return _QUIT
             return None
 
         # _print_msg(msg)
 
         if mm.MSG_NOTIFY_DEV_INFO != msg.get_msg_type():
+            self.deadline.note(msg.get_msg_type())
             self.acc = 0
             return None
+
+        self.deadline.extend()
 
         if 0 == self.acc:
             print("Handshaking..")
@@ -206,11 +233,11 @@ class _Handshake(_State):
         return _ProgFw(self.prog)
 
     def make_msg(self):
-        msg: mm.Msg = mm.Msg.make(mm.MSG_NOTIFY_BL_VER, 4)
+        msg: mm.Msg = mm.Msg.make(mm.MSG_NOTIFY_BL_VER, BL_VER_LEN)
 
         with memoryview(msg.buf) as view:
-            len1 = len(self.bl_ver)
-            view[4 : 4 + len1] = self.bl_ver.encode("ascii")[:len1]
+            encoded = self.bl_ver.encode("ascii")[:BL_VER_LEN]
+            view[4 : 4 + len(encoded)] = encoded
 
         return msg
 
@@ -228,20 +255,38 @@ class _ProgFw(_State):
         self.x4 = 0xFFFFFFFF & _timestamp()
         self.page_index = 0
         self.page_cnt = page_cnt
-        self.expect_resp = False
+        self.retry = ll.Retry("a page write")
 
-    def loop(self) -> _State | None:
+    def loop(self) -> _State | str | None:
 
-        if not self.expect_resp:
+        if self.retry.due():
 
-            print(
-                "Programming page {} / {}..".format(self.page_index + 1, self.page_cnt)
-            )
+            if self.retry.exhausted():
+                self.retry.give_up(dfu_expected=True)
+                print()
+                print(
+                    "!!! The radio is only partially programmed (stopped at page "
+                    "{} / {}).".format(self.page_index + 1, self.page_cnt)
+                )
+                print(
+                    "!!! Do NOT power it off. Keep it in DFU mode and run the flash "
+                    "command again."
+                )
+                return _QUIT
+
+            if self.retry.first():
+                print(
+                    "Programming page {} / {}..".format(
+                        self.page_index + 1, self.page_cnt
+                    )
+                )
+            else:
+                print(".", end="", flush=True)
 
             msg = self.make_msg(self.page_index)
             self.send_msg(msg)
 
-            self.expect_resp = True
+            self.retry.sent()
             return None
 
         # ------------
@@ -252,6 +297,7 @@ class _ProgFw(_State):
             return None
 
         if mm.MSG_PROG_FW_RESP != msg.get_msg_type():
+            self.retry.note(msg.get_msg_type())
             return None
 
         assert 8 == msg.get_data_len()
@@ -261,15 +307,47 @@ class _ProgFw(_State):
         err = msg.get_hw_LE(10)
 
         if 0 != err:
+            if self.retry.retried():
+                print()  # close the line of retry dots
             print(
                 "Programming failed: err = {}, page index = {}".format(err, page_index)
             )
-            # Retry
-            self.expect_resp = False
+
+            if self.retry.exhausted():
+                print()
+                print(
+                    "The device rejected page {} / {} {} times running (err = {}).".format(
+                        self.page_index + 1, self.page_cnt, self.retry.count, err
+                    )
+                )
+                print(
+                    "A rejected page is not written, so the radio's flash should be"
+                )
+                print(
+                    "unchanged. It stays in DFU mode and can still be flashed with"
+                )
+                print("UV Studio.")
+                print()
+                print(
+                    "A rejection from the very first page usually means the device"
+                )
+                print(
+                    "expects a different handshake or page format than this tool"
+                )
+                print(
+                    "sends. Try --bl-ver with the exact version the device reports."
+                )
+                return _QUIT
+
+            # Retry, still counting towards exhaustion
+            self.retry.again()
             return None
 
+        if self.retry.retried():
+            print()
+
         self.page_index += 1
-        self.expect_resp = False
+        self.retry.reset()
 
         if self.page_index < self.page_cnt:
             return None

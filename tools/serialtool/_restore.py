@@ -16,6 +16,7 @@
 from serial import Serial
 from datetime import datetime
 import msg as mm
+import _link as ll
 
 DUMP_CONFIG = 1
 DUMP_CALIB = 2
@@ -105,15 +106,23 @@ class _DeviceInfo(_State):
 
     def __init__(self, dump):
         super().__init__(dump)
-        self.expect_resp = False
+        self.retry = ll.Retry("the device info request")
         self.timestamp = 0
 
-    def loop(self) -> _State:
+    def loop(self) -> _State | bool:
 
-        if not self.expect_resp:
-            print("Examing device info..")
+        if self.retry.due():
+            if self.retry.exhausted():
+                self.retry.give_up()
+                return False
+
+            if self.retry.first():
+                print("Examing device info..")
+            else:
+                print(".", end="", flush=True)
+
             self.send_request()
-            self.expect_resp = True
+            self.retry.sent()
             return
 
         msg = self.recv_msg()
@@ -121,7 +130,11 @@ class _DeviceInfo(_State):
             return
 
         if 0x0515 != msg.get_msg_type():
+            self.retry.note(msg.get_msg_type())
             return
+
+        if self.retry.retried():
+            print()
 
         # version string
         end = msg.buf.find(b"\0", 4, 20)
@@ -256,18 +269,29 @@ class _DumpEeprom(_State):
 
         data.extend(data1)
 
-        self.expect_resp = False
+        self.retry = ll.Retry("an EEPROM write")
         self.AES_key = None
 
     def loop(self) -> bool | _State:
 
-        if not self.expect_resp:
+        if self.retry.due():
+
+            if self.retry.exhausted():
+                self.retry.give_up()
+                print("Restore aborted at offset 0x{:04x}.".format(self.offset))
+                print("The EEPROM is partially written: re-run to complete it.")
+                return False
+
+            retrying = not self.retry.first()
+            if retrying:
+                print(".", end="", flush=True)
 
             # AES key
             if 0 == self.size and self.AES_key is not None:
-                print("Writting data.. 100%")
+                if not retrying:
+                    print("Writting data.. 100%")
                 self.send_request(0x0F30, self.AES_key)
-                self.expect_resp = True
+                self.retry.sent()
                 return
 
             off1 = len(self.data) - self.size
@@ -279,10 +303,11 @@ class _DumpEeprom(_State):
                 self.size -= 16
                 return
             else:
-                per = off1 * 100 // len(self.data)
-                print(f"Writting data.. {per}%")
+                if not retrying:
+                    per = off1 * 100 // len(self.data)
+                    print(f"Writting data.. {per}%")
                 self.send_request(self.offset, self.data[off1 : off1 + 16])
-                self.expect_resp = True
+                self.retry.sent()
                 return
 
         # Receive resposne ----------
@@ -292,6 +317,7 @@ class _DumpEeprom(_State):
             return
 
         if 0x051E != msg.get_msg_type():
+            self.retry.note(msg.get_msg_type())
             return
 
         off = msg.get_hw_LE(4)
@@ -301,7 +327,7 @@ class _DumpEeprom(_State):
             if off != 0x0F30:
                 print("Invalid response. Retry..")
                 # print(f"{off:04x}")
-                self.expect_resp = False
+                self.retry.again()
                 return
             else:
                 # Mark as done
@@ -309,13 +335,16 @@ class _DumpEeprom(_State):
         else:
             if off != self.offset:
                 print("Invalid response. Retry..")
-                self.expect_resp = False
+                self.retry.again()
                 return
             else:
                 self.offset += 16
                 self.size -= 16
 
-        self.expect_resp = False
+        if self.retry.retried():
+            print()
+
+        self.retry.reset()
 
         if self.size > 0 or self.AES_key is not None:
             return

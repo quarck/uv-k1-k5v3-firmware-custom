@@ -16,6 +16,7 @@
 from serial import Serial
 from datetime import datetime
 import msg as mm
+import _link as ll
 
 DUMP_CONFIG = 1
 DUMP_CALIB = 2
@@ -105,15 +106,23 @@ class _DeviceInfo(_State):
 
     def __init__(self, dump):
         super().__init__(dump)
-        self.expect_resp = False
+        self.retry = ll.Retry("the device info request")
         self.timestamp = 0
 
-    def loop(self) -> _State:
+    def loop(self) -> _State | bool:
 
-        if not self.expect_resp:
-            print("Examing device info..")
+        if self.retry.due():
+            if self.retry.exhausted():
+                self.retry.give_up()
+                return False
+
+            if self.retry.first():
+                print("Examing device info..")
+            else:
+                print(".", end="", flush=True)
+
             self.send_request()
-            self.expect_resp = True
+            self.retry.sent()
             return
 
         msg = self.recv_msg()
@@ -121,7 +130,11 @@ class _DeviceInfo(_State):
             return
 
         if 0x0515 != msg.get_msg_type():
+            self.retry.note(msg.get_msg_type())
             return
+
+        if self.retry.retried():
+            print()
 
         # version string
         end = msg.buf.find(b"\0", 4, 20)
@@ -228,16 +241,25 @@ class _DumpEeprom(_State):
 
         self.offset = off
         self.size = size
-        self.expect_resp = False
+        self.retry = ll.Retry("an EEPROM read")
         self.data = bytearray()
 
     def loop(self) -> bool | _State:
 
-        if not self.expect_resp:
-            per = len(self.data) * 100 // (len(self.data) + self.size)
-            print(f"Fetching data.. {per}%")
+        if self.retry.due():
+            if self.retry.exhausted():
+                self.retry.give_up()
+                print("Dump aborted at offset 0x{:04x}.".format(self.offset))
+                return False
+
+            if self.retry.first():
+                per = len(self.data) * 100 // (len(self.data) + self.size)
+                print(f"Fetching data.. {per}%")
+            else:
+                print(".", end="", flush=True)
+
             self.send_request()
-            self.expect_resp = True
+            self.retry.sent()
             return
 
         msg = self.recv_msg()
@@ -245,6 +267,7 @@ class _DumpEeprom(_State):
             return
 
         if 0x051C != msg.get_msg_type():
+            self.retry.note(msg.get_msg_type())
             return
 
         off = msg.get_hw_LE(4)
@@ -252,13 +275,16 @@ class _DumpEeprom(_State):
 
         if off != self.offset or size != 16:
             print("Invalid response. Retry..")
-            self.expect_resp = False
+            self.retry.again()
             return
+
+        if self.retry.retried():
+            print()
 
         self.data.extend(msg.buf[8:24])
         self.offset += 16
         self.size -= 16
-        self.expect_resp = False
+        self.retry.reset()
 
         if self.size > 0:
             return

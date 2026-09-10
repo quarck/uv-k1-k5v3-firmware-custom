@@ -27,6 +27,11 @@ MSG_PROG_f80_RESP = 0x0517
 # _MSG_LOG = 0x4C4C  # 'L' 'L'
 # _MSG_LOG_OBFUSCATED = 0x205A
 
+# Longest message we will buffer while waiting for the rest of a packet. The
+# largest real one is the 272-byte firmware page write; anything beyond this is
+# a corrupt length field that must not stall the receiver.
+MAX_MSG_LEN = 1024
+
 
 class Msg:
 
@@ -85,6 +90,18 @@ def fetch(buf: bytearray) -> Msg | None:
 
     msg_len = _get_hw_LE(buf, pack_begin + 2)
     pack_end = pack_begin + 6 + msg_len
+
+    if msg_len > MAX_MSG_LEN:
+        # No real message is this long: the header is bogus, resync past it
+        del buf[: pack_begin + 2]
+        return None
+
+    if len(buf) < pack_end + 2:
+        # The packet is still arriving. Serial delivers a message in as many
+        # chunks as it likes, so an incomplete packet is normal, not an error:
+        # discard only the noise ahead of the header and wait for the rest.
+        del buf[:pack_begin]
+        return None
 
     if not buf.startswith(b"\xdc\xba", pack_end):
         # We've got wrong beginning

@@ -22,6 +22,7 @@ from time import sleep
 import os
 
 import _fwcodec as fc
+import _link as ll
 
 
 def load_image(file: str) -> bytes:
@@ -114,6 +115,8 @@ def main_flash(args, ser):
     bl_ver: str = args.bl_ver
     fw_file: str = args.file
 
+    import _prog as pp_limits  # for BL_VER_LEN
+
     try:
         fw_image = load_image(fw_file)
         if 0 == len(fw_image):
@@ -123,8 +126,12 @@ def main_flash(args, ser):
         print("Cannot load firmware image '{}': {}".format(fw_file, e))
         return
 
-    if len(bl_ver) > 4:
-        print("Invalid bootloader version '{}': more than 4 characters".format(bl_ver))
+    if bl_ver is not None and len(bl_ver) > pp_limits.BL_VER_LEN:
+        print(
+            "Invalid bootloader version '{}': more than {} characters".format(
+                bl_ver, pp_limits.BL_VER_LEN
+            )
+        )
         return
 
     print("Firmware image loaded: {}, size = {}".format(fw_file, len(fw_image)))
@@ -193,6 +200,44 @@ def main_decode(args):
         print("Packed version field: {}".format(version))
 
 
+def add_port_args(parser):
+    """Port options shared by the flash, dump and restore subcommands."""
+
+    parser.add_argument(
+        "--port", "-p", help="serial port, eg., '/dev/ttyUSB0'", required=True
+    )
+    parser.add_argument(
+        "--dtr",
+        choices=("0", "1"),
+        help="force the DTR line low or high. pyserial raises it by default, "
+        "which does not suit every cable",
+    )
+    parser.add_argument(
+        "--rts", choices=("0", "1"), help="force the RTS line low or high"
+    )
+    parser.add_argument(
+        "--settle",
+        type=float,
+        default=ll.SETTLE,
+        help="seconds to wait after opening the port before transmitting "
+        "(default {})".format(ll.SETTLE),
+    )
+    parser.add_argument(
+        "--retries",
+        type=int,
+        default=ll.ATTEMPTS,
+        help="how many times to resend an unanswered request before giving up "
+        "(default {})".format(ll.ATTEMPTS),
+    )
+    parser.add_argument(
+        "--wait",
+        type=float,
+        default=ll.WAIT,
+        help="seconds to wait for messages the device sends unprompted "
+        "(default {:.0f})".format(ll.WAIT),
+    )
+
+
 def main():
 
     # Usage:
@@ -210,21 +255,19 @@ def main():
     sp = ap.add_subparsers(required=True, dest="subcommand")
 
     ap_flash = sp.add_parser("flash", help="flash firmware")
-    ap_flash.add_argument(
-        "--port", "-p", help="serial port, eg., '/dev/ttyUSB0'", required=True
-    )
+    add_port_args(ap_flash)
     ap_flash.add_argument(
         "--bl-ver",
-        help="bootloader version, eg. '1.01'. Max 4 characters. Default '?'",
+        help="bootloader version to report to the device, eg. '7.00.07'. Max 16 "
+        "characters. Default: whatever version the device announces. '*' sends "
+        "an empty field",
         required=False,
-        default="?",
+        default=None,
     )
     ap_flash.add_argument("file", help="firmware image file")
 
     ap_dump = sp.add_parser("dump", help="dump configuration or calibration data")
-    ap_dump.add_argument(
-        "--port", "-p", help="serial port, eg., '/dev/ttyUSB0'", required=True
-    )
+    add_port_args(ap_dump)
     ag = ap_dump.add_mutually_exclusive_group()
     ag.add_argument("--config", action="store_true", help="dump configuration")
     ag.add_argument("--calib", action="store_true", help="dump calibration data")
@@ -239,9 +282,7 @@ def main():
     ap_restore = sp.add_parser(
         "restore", help="restore configuration or calibration data from previous dump"
     )
-    ap_restore.add_argument(
-        "--port", "-p", help="serial port, eg., '/dev/ttyUSB0'", required=True
-    )
+    add_port_args(ap_restore)
     ag = ap_restore.add_mutually_exclusive_group()
     ag.add_argument("--config", action="store_true", help="restore configuration")
     ag.add_argument("--calib", action="store_true", help="restore calibration data")
@@ -275,10 +316,15 @@ def main():
 
     port: str = args.port
 
-    try:
-        import serial
+    ll.configure(attempts=args.retries, wait=args.wait)
 
-        ser = serial.Serial(port, baudrate=38400, timeout=0.0001, write_timeout=None)
+    try:
+        ser = ll.open_port(
+            port,
+            settle=args.settle,
+            dtr=None if args.dtr is None else "1" == args.dtr,
+            rts=None if args.rts is None else "1" == args.rts,
+        )
     except Exception as e:
         print("Cannot open port '{}': {}".format(port, e))
         return
