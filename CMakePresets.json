@@ -145,8 +145,6 @@
                 "ENABLE_FEAT_F4HWN_LOGO_SAV": true,
                 "ENABLE_FEAT_F4HWN_MENU_CAT": true,
                 "ENABLE_FEAT_F4HWN_ACTION_PICKER": true,
-                "ENABLE_QRCK_SQL_ADJUST": true,
-                "ENABLE_QRCK_CW": true,
                 "ENABLE_FEAT_F4HWN_MULTIBOOT": true,
                 "ENABLE_FEAT_F4HWN_MULTIBOOT_OVERLAY": true,
                 "ENABLE_FEAT_F4HWN_OVERLAY_APPS": false,
@@ -207,6 +205,16 @@
                 "EDITION_STRING": "Max",
                 "TARGET": "f4hwn.max"
             }
+        },
+        {
+            "name": "Qrck",
+            "inherits": "Fusion",
+            "cacheVariables": {
+                "ENABLE_QRCK_SQL_ADJUST": true,
+                "ENABLE_QRCK_CW": true,
+                "EDITION_STRING": "Qrck",
+                "TARGET": "f4hwn.qrck"
+            }
         }
     ],
     "buildPresets": [
@@ -233,6 +241,10 @@
         {
             "name": "Max",
             "configurePreset": "Max"
+        },
+        {
+            "name": "Qrck",
+            "configurePreset": "Qrck"
         }
     ]
 }
