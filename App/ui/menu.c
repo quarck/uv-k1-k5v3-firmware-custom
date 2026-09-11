@@ -97,6 +97,9 @@ const t_menu_item MenuList[] =
     {"BatSav",      MENU_SAVE          }, // was "SAVE"
     {"BatTxt",      MENU_BAT_TXT       },
     {"Mic",         MENU_MIC           },
+#ifdef ENABLE_QRCK_CW
+    {"CWTone",      MENU_CWPITCH       },
+#endif
     {"MicBar",      MENU_MIC_BAR       },
     {"ChDisp",      MENU_MDF           }, // was "MDF"
     {"POnMsg",      MENU_PONMSG        },
@@ -605,7 +608,11 @@ static const uint8_t CatAudio[]   = {
     MENU_SET_AUD,
 #endif
 };
-static const uint8_t CatRadio[]   = { MENU_SQL, MENU_STE, MENU_RP_STE, MENU_ROGER, MENU_VOX, MENU_TDR };
+static const uint8_t CatRadio[]   = { MENU_SQL, MENU_STE, MENU_RP_STE, MENU_ROGER, MENU_VOX, MENU_TDR,
+#ifdef ENABLE_QRCK_CW
+                                      MENU_CWPITCH,
+#endif
+                                    };
 static const uint8_t CatDtmf[]    = { MENU_UPCODE, MENU_DWCODE, MENU_D_ST, MENU_D_PRE, MENU_D_LIVE_DEC };
 static const uint8_t CatService[] = { MENU_F_LOCK, MENU_350EN, MENU_BATCAL, MENU_BATTYP, MENU_SET_NAV, MENU_RESET };
 
@@ -967,6 +974,12 @@ void UI_DisplayMenu(void)
         case MENU_SQL:
             sprintf(String, "%d", gSubMenuSelection);
             break;
+
+#ifdef ENABLE_QRCK_CW
+        case MENU_CWPITCH:    // stored in 10 Hz units, shown in Hz
+            sprintf(String, "%dHz", gSubMenuSelection * 10);
+            break;
+#endif
 
         case MENU_MIC:
             {   // display the mic gain in actual dB rather than just an index number
@@ -1669,9 +1682,9 @@ void UI_DisplayMenu(void)
                     strcpy(String, gSubMenu_SET_AUD_AM[gSubMenuSelection]);
                     strcpy(top_right_badge, "AM");
                 }
-                else if (gTxVfo->Modulation == MODULATION_USB) {
-                    strcpy(String, "USB");
-                    strcpy(top_right_badge, "USB");
+                else if (IS_SSB_MODE(gTxVfo->Modulation)) {
+                    strcpy(String, gModulationStr[gTxVfo->Modulation]);
+                    strcpy(top_right_badge, gModulationStr[gTxVfo->Modulation]);
                 }
                 else {
                     strcpy(String, gSubMenu_SET_AUD_FM[gSubMenuSelection]);

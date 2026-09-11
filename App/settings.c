@@ -286,6 +286,14 @@ gEeprom.FreqChannel[1]   = IS_FREQ_CHANNEL(Data16[5]) ? Data16[5] : (FREQ_CHANNE
 
     // 0EA8..0EAF
     PY25Q16_ReadBuffer(0x00A0A8 + 0x18, Data, 8);
+#ifdef ENABLE_QRCK_CW
+    // Data[0] is unused by this firmware: the save path has always written a
+    // literal false there, so storing the CW pitch in it takes nothing away.
+    // That also means every radio upgrading to this build reads a 0 here, so 0
+    // has to mean "never set" and fall back to the default -- a 0 Hz beat note
+    // would be silent anyway, which is why the menu starts at 1.
+    gEeprom.CW_PITCH                       = (Data[0] >= 1 && Data[0] < 120) ? Data[0] : 70;
+#endif
     gEeprom.ROGER                          = (Data[1] <  3) ? Data[1] : ROGER_MODE_OFF;
     gEeprom.REPEATER_TAIL_TONE_ELIMINATION = (Data[2] < 11) ? Data[2] : 0;
     gEeprom.TX_VFO                         = (Data[3] <  2) ? Data[3] : 0;
@@ -997,7 +1005,11 @@ void SETTINGS_SaveSettings(void)
 
     // 0x0EA8
     State = SecBuf + 0x18;
+#ifdef ENABLE_QRCK_CW
+    State[0] = gEeprom.CW_PITCH;
+#else
     State[0] = false;
+#endif
     State[1] = gEeprom.ROGER;
     State[2] = gEeprom.REPEATER_TAIL_TONE_ELIMINATION;
     State[3] = gEeprom.TX_VFO;

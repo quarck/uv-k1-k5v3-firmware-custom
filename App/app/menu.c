@@ -312,6 +312,13 @@ int MENU_GetLimits(uint8_t menu_id, int32_t *pMin, int32_t *pMax)
             *pMax = 5;
             break;
 
+#ifdef ENABLE_QRCK_CW
+        case MENU_CWPITCH:
+            *pMin = 1;      // 0 is reserved to mean "never set", see SETTINGS_InitEEPROM
+            *pMax = 119;
+            break;
+#endif
+
         case MENU_MIC:
             //*pMin = 0;
             *pMax = 8;
@@ -443,7 +450,7 @@ int MENU_GetLimits(uint8_t menu_id, int32_t *pMin, int32_t *pMax)
             //*pMin = 0;
             if(gTxVfo->Modulation == MODULATION_AM)
                 *pMax = ARRAY_SIZE(gSubMenu_SET_AUD_AM) - 1;
-            else if (gTxVfo->Modulation == MODULATION_USB)
+            else if (IS_SSB_MODE(gTxVfo->Modulation))
                 *pMax = 0;
             else
                 *pMax = ARRAY_SIZE(gSubMenu_SET_AUD_FM) - 1;
@@ -736,6 +743,13 @@ void MENU_AcceptSetting(void)
         case MENU_RP_STE:
             gEeprom.REPEATER_TAIL_TONE_ELIMINATION = gSubMenuSelection;
             break;
+
+#ifdef ENABLE_QRCK_CW
+        case MENU_CWPITCH:
+            gEeprom.CW_PITCH     = gSubMenuSelection;
+            gFlagReconfigureVfos = true;   // retune, the offset just changed
+            break;
+#endif
 
         case MENU_MIC:
             gEeprom.MIC_SENSITIVITY = gSubMenuSelection;
@@ -1245,6 +1259,12 @@ void MENU_ShowCurrentSetting(void)
             gSubMenuSelection = gEeprom.REPEATER_TAIL_TONE_ELIMINATION;
             break;
 
+#ifdef ENABLE_QRCK_CW
+        case MENU_CWPITCH:
+            gSubMenuSelection = gEeprom.CW_PITCH;
+            break;
+#endif
+
         case MENU_MIC:
             gSubMenuSelection = gEeprom.MIC_SENSITIVITY;
             break;
@@ -1460,7 +1480,7 @@ void MENU_ShowCurrentSetting(void)
         case MENU_SET_AUD:
             if(gTxVfo->Modulation == MODULATION_AM)
                 gSubMenuSelection = gSetting_set_audio_am;
-            else if (gTxVfo->Modulation == MODULATION_USB)
+            else if (IS_SSB_MODE(gTxVfo->Modulation))
                 gSubMenuSelection = 0;
             else
                 gSubMenuSelection = gSetting_set_audio_fm;

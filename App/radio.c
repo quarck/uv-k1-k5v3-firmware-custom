@@ -48,6 +48,10 @@ const char gModulationStr[MODULATION_UKNOWN][4] = {
     [MODULATION_FM]="FM",
     [MODULATION_AM]="AM",
     [MODULATION_USB]="USB",
+#ifdef ENABLE_QRCK_CW
+    [MODULATION_CW]="CW",
+    [MODULATION_CWF]="CWF",
+#endif
 
 #ifdef ENABLE_BYP_RAW_DEMODULATORS
     [MODULATION_BYP]="BYP",
@@ -800,6 +804,9 @@ void RADIO_SetupRegisters(bool switchToForeground)
     #else
         Frequency = gRxVfo->pRX->Frequency;
     #endif
+#ifdef ENABLE_QRCK_CW
+    Frequency += RADIO_CwOffset(gRxVfo->Modulation);
+#endif
     BK4819_SetFrequency(Frequency);
 
     // Keep the demodulator in sync when retuning without entering RX audio.
@@ -1029,6 +1036,19 @@ void RADIO_SetTxParameters(void)
     }
 }
 
+#ifdef ENABLE_QRCK_CW
+// CW has no demodulator of its own on the BK4819 -- it is received on the SSB
+// path with the RX tuned below the carrier by the pitch, so the signal lands in
+// the audio passband as a tone. There is only one CW mode: the chip has no
+// sideband selection, so tuning the other way sounds identical. Frequencies are
+// in 10 Hz units, so a pitch of 70 == 700 Hz.
+// CWF is deliberately absent here -- it uses the FM discriminator, not this path.
+int16_t RADIO_CwOffset(ModulationMode_t modulation)
+{
+    return modulation == MODULATION_CW ? -(int16_t)gEeprom.CW_PITCH : 0;
+}
+#endif
+
 void RADIO_SetModulation(ModulationMode_t modulation)
 {
     #ifdef ENABLE_BYP_RAW_DEMODULATORS
@@ -1059,12 +1079,18 @@ void RADIO_SetModulation(ModulationMode_t modulation)
     switch(modulation) {
         default:
         case MODULATION_FM:
+#ifdef ENABLE_QRCK_CW
+        case MODULATION_CWF:   // CW through the FM discriminator, no pitch offset
+#endif
             mod = BK4819_AF_FM;
             break;
         case MODULATION_AM:
             mod = BK4819_AF_FM; // AM no longer needs special AF setting
             break;
         case MODULATION_USB:
+#ifdef ENABLE_QRCK_CW
+        case MODULATION_CW:
+#endif
             mod = BK4819_AF_BASEBAND2;
             break;
 
@@ -1112,7 +1138,7 @@ void RADIO_SetModulation(ModulationMode_t modulation)
             BK4819_WriteRegister(0x2f, 0x9890);
 
             #ifdef ENABLE_FEAT_F4HWN_AUDIO
-                if (modulation == MODULATION_USB)
+                if (IS_SSB_MODE(modulation))
                     AUDIO_ApplyUSBProfile();
                 else
                     AUDIO_ApplyFMProfile(gSetting_set_audio_fm);
@@ -1125,7 +1151,7 @@ void RADIO_SetModulation(ModulationMode_t modulation)
     }
     
     BK4819_SetRegValue(afDacGainRegSpec, 0xF);
-    BK4819_WriteRegister(BK4819_REG_3D, modulation == MODULATION_USB ? 0 : 0x2AAB);
+    BK4819_WriteRegister(BK4819_REG_3D, IS_SSB_MODE(modulation) ? 0 : 0x2AAB);
     BK4819_SetRegValue(afcDisableRegSpec, modulation != MODULATION_FM);
 
     RADIO_SetupAGC(modulation == MODULATION_AM, false);

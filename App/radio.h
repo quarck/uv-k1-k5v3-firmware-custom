@@ -59,6 +59,10 @@ typedef enum {
     MODULATION_FM,
     MODULATION_AM,
     MODULATION_USB,
+#ifdef ENABLE_QRCK_CW
+    MODULATION_CW,     // SSB demodulator, RX tuned off the carrier by the pitch
+    MODULATION_CWF,    // FM discriminator, no offset
+#endif
 
 #ifdef ENABLE_BYP_RAW_DEMODULATORS
     MODULATION_BYP,
@@ -67,6 +71,14 @@ typedef enum {
 
     MODULATION_UKNOWN
 } ModulationMode_t;
+
+// CW rides on the SSB demodulator and needs the same BK4819 setup as USB.
+// CWF is deliberately not here: it uses the FM discriminator instead.
+#ifdef ENABLE_QRCK_CW
+    #define IS_SSB_MODE(m) ((m) == MODULATION_USB || (m) == MODULATION_CW)
+#else
+    #define IS_SSB_MODE(m) ((m) == MODULATION_USB)
+#endif
 
 extern const char gModulationStr[MODULATION_UKNOWN][4];
 
@@ -169,6 +181,9 @@ BK4819_FilterBandwidth_t RADIO_GetAMFilterBandwidth(const VFO_Info_t *pVfo);
 void     RADIO_SetTxParameters(void);
 void     RADIO_SetupAGC(bool listeningAM, bool disable);
 void     RADIO_SetModulation(ModulationMode_t modulation);
+#ifdef ENABLE_QRCK_CW
+int16_t  RADIO_CwOffset(ModulationMode_t modulation);
+#endif
 void     RADIO_SetVfoState(VfoState_t State);
 void     RADIO_PrepareTX(void);
 void     RADIO_SendCssTail(void);
