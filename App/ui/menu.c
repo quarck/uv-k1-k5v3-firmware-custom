@@ -497,6 +497,7 @@ const t_sidefunction gSubMenu_SIDEFUNCTIONS[] =
     {"REMOVE\nOFFSET",  ACTION_OPT_REMOVE_OFFSET},
     {"FOX HUNT",        ACTION_OPT_FOXHUNT},
     {"BEACON",          ACTION_OPT_BEACON},
+    {"SQL\nADJUST",     ACTION_OPT_SQL},
 };
 
 const uint8_t gSubMenu_SIDEFUNCTIONS_size = ARRAY_SIZE(gSubMenu_SIDEFUNCTIONS);

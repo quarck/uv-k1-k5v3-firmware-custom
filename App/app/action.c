@@ -41,6 +41,7 @@
 #include "driver/backlight.h"
 #include "functions.h"
 #include "misc.h"
+#include "radio.h"
 #include "settings.h"
 #include "ui/inputbox.h"
 #include "ui/main.h"
@@ -129,6 +130,9 @@ void (*const action_opt_table[ACTION_OPT_LEN])(void) = {
 #if defined(ENABLE_FEAT_F4HWN_BEACON) || defined(ENABLE_FEAT_F4HWN_OVERLAY_APPS)
     [ACTION_OPT_BEACON] = &ACTION_Beacon,
 #endif
+#ifdef ENABLE_QRCK_SQL_ADJUST
+    [ACTION_OPT_SQL] = &ACTION_SqlAdjust,
+#endif
 };
 
 static_assert(ARRAY_SIZE(action_opt_table) == ACTION_OPT_LEN);
@@ -138,6 +142,7 @@ static_assert(ACTION_OPT_POWER_HIGH == 20);
 static_assert(ACTION_OPT_REMOVE_OFFSET == 21);
 static_assert(ACTION_OPT_FOXHUNT == 22);
 static_assert(ACTION_OPT_BEACON == 23);
+static_assert(ACTION_OPT_SQL == 24);
 
 bool ACTION_IsAvailable(uint8_t action)
 {
@@ -380,6 +385,124 @@ static void ACTION_Execute(uint8_t action)
     gBeepToPlay = BEEP_1KHZ_60MS_OPTIONAL;
     action_opt_table[action]();
 }
+
+#ifdef ENABLE_QRCK_SQL_ADJUST
+
+bool    gSqlAdjustMode;
+uint8_t gSqlAdjustTimeout_500ms;
+
+// squelch level when the overlay was opened - saves EEPROM write if no changes
+static uint8_t sqlLevelOnEntry;
+
+// set while the key press that opened the overlay has yet to be released
+static bool sqlIgnoreNextRelease;
+
+// Push the new squelch straight into the BK4819 so the user hears the effect
+// while turning.
+static void SQL_ADJUST_Apply(void)
+{
+    RADIO_ConfigureSquelchAndOutputPower(gRxVfo);
+    BK4819_SetupSquelch(
+        gRxVfo->SquelchOpenRSSIThresh,    gRxVfo->SquelchCloseRSSIThresh,
+        gRxVfo->SquelchOpenNoiseThresh,   gRxVfo->SquelchCloseNoiseThresh,
+        gRxVfo->SquelchCloseGlitchThresh, gRxVfo->SquelchOpenGlitchThresh);
+}
+
+void ACTION_SqlAdjust(void)
+{
+    // only the main screen draws the overlay and routes keys into it
+    if (gScreenToDisplay != DISPLAY_MAIN)
+        return;
+
+    gSqlAdjustMode          = true;
+    sqlIgnoreNextRelease    = true;
+    sqlLevelOnEntry         = gEeprom.SQUELCH_LEVEL;
+    gSqlAdjustTimeout_500ms = SQL_ADJUST_TIMEOUT_500MS;
+    gUpdateDisplay          = true;
+}
+
+void SQL_ADJUST_Exit(void)
+{
+    if (!gSqlAdjustMode)
+        return;
+
+    gSqlAdjustMode = false;
+
+    if (gEeprom.SQUELCH_LEVEL != sqlLevelOnEntry) {
+#ifdef ENABLE_FEAT_F4HWN
+        // F + UP/DOWN stashes the level it found in gSquelchLevelOriginal so
+        // that SETTINGS_SaveSettings() writes that one back and the adjustment
+        // stays session-only. This overlay is meant to change the setting, so
+        // clear the marker first -- exactly as the Sql menu entry does.
+        gSquelchLevelOriginal = 10;
+#endif
+        SETTINGS_SaveSettings();
+        // bring both VFOs back in step with the new level
+        gVfoConfigureMode = VFO_CONFIGURE;
+    }
+
+    gUpdateDisplay = true;
+}
+
+bool SQL_ADJUST_ProcessKey(KEY_Code_t key, bool isPressed, bool isHeld)
+{
+    if (!gSqlAdjustMode)
+        return false;
+
+    if (key == KEY_PTT) {   // PTT always keeps its normal job
+        SQL_ADJUST_Exit();
+        return false;
+    }
+
+    if (isPressed) {
+        gSqlAdjustTimeout_500ms = SQL_ADJUST_TIMEOUT_500MS;
+        sqlIgnoreNextRelease    = false;
+    }
+    else if (sqlIgnoreNextRelease) {
+        // The key press that opened the overlay is still down: a side function
+        // fires on the long-press hold, or on the release of a short press,
+        // and either way one more release event follows. Swallow it, or the
+        // overlay would close the instant it opened.
+        sqlIgnoreNextRelease = false;
+        return true;
+    }
+
+    switch (key) {
+        case KEY_UP:
+        case KEY_DOWN:
+            if (isPressed) {   // press and auto-repeat, not release
+                const uint8_t level = gEeprom.SQUELCH_LEVEL;
+
+                if (key == KEY_UP) {
+                    if (level < 9)
+                        gEeprom.SQUELCH_LEVEL = level + 1;
+                }
+                else if (level > 0) {
+                    gEeprom.SQUELCH_LEVEL = level - 1;
+                }
+
+                if (gEeprom.SQUELCH_LEVEL != level) {
+                    SQL_ADJUST_Apply();
+                    gUpdateDisplay = true;
+
+                    if (!isHeld)   // as elsewhere, auto-repeat stays silent
+                        gBeepToPlay = BEEP_1KHZ_60MS_OPTIONAL;
+                }
+                else if (!isHeld) {   // already at 0 or 9
+                    gBeepToPlay = BEEP_500HZ_60MS_DOUBLE_BEEP_OPTIONAL;
+                }
+            }
+            return true;
+
+        default:
+            // any other key closes the overlay, on release
+            if (!isPressed)
+                SQL_ADJUST_Exit();
+            return true;
+    }
+}
+
+#endif
 
 #ifdef ENABLE_FEAT_F4HWN_ACTION_PICKER
 uint8_t gActionPickerKey;

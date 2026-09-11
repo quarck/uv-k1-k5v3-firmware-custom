@@ -1848,6 +1848,14 @@ void cancelUserInputModes(void)
 void APP_TimeSlice500ms(void)
 {
     gNextTimeslice_500ms = false;
+#ifdef ENABLE_QRCK_SQL_ADJUST
+    if (gSqlAdjustMode && gSqlAdjustTimeout_500ms > 0 &&
+        --gSqlAdjustTimeout_500ms == 0)
+    {
+        SQL_ADJUST_Exit();
+    }
+#endif
+
 #ifdef ENABLE_FEAT_F4HWN_ACTION_PICKER
     if (gActionPickerKey != 0 && gActionPickerTimeout_500ms > 0 &&
         --gActionPickerTimeout_500ms == 0)
@@ -2363,6 +2371,13 @@ static void ProcessKey(KEY_Code_t Key, bool bKeyPressed, bool bKeyHeld)
     }
 
     bool lowBatPopup = gLowBattery && !gLowBatteryConfirmed &&  gScreenToDisplay == DISPLAY_MAIN;
+#ifdef ENABLE_QRCK_SQL_ADJUST
+    if (gSqlAdjustMode &&
+        (gEeprom.KEY_LOCK || lowBatPopup || gScreenToDisplay != DISPLAY_MAIN))
+        SQL_ADJUST_Exit();
+    if (SQL_ADJUST_ProcessKey(Key, bKeyPressed, bKeyHeld))
+        goto Skip;
+#endif
 #ifdef ENABLE_FEAT_F4HWN_ACTION_PICKER
     if (gActionPickerKey != 0 &&
         (gEeprom.KEY_LOCK || lowBatPopup || gScreenToDisplay != DISPLAY_MAIN))

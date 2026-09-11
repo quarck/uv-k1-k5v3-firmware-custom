@@ -18,7 +18,7 @@
 #include <stdlib.h>  // abs()
 
 #include "app/app.h"
-#ifdef ENABLE_FEAT_F4HWN_ACTION_PICKER
+#if defined(ENABLE_FEAT_F4HWN_ACTION_PICKER) || defined(ENABLE_QRCK_SQL_ADJUST)
     #include "app/action.h"
 #endif
 #include "app/chFrScanner.h"
@@ -1369,6 +1369,25 @@ void UI_DisplayMain(void)
         ST7565_BlitFullScreen();
         return;
     }
+
+#ifdef ENABLE_QRCK_SQL_ADJUST
+    if (gSqlAdjustMode) {   // squelch-adjust overlay, UP/DOWN are live
+        UI_PrintStringSmallNormal("SQUELCH", 0, LCD_WIDTH, 1);
+
+        // 9 segments, not 10: the level runs 0..9 and 0 must read as empty,
+        // so nine cells cover all ten states and level 9 fills the bar.
+        for (unsigned int i = 0; i < 9; i++)
+            String[i] = (i < gEeprom.SQUELCH_LEVEL) ? '=' : '-';
+        String[9]  = ' ';
+        String[10] = '0' + gEeprom.SQUELCH_LEVEL;
+        String[11] = 0;
+
+        UI_PrintStringSmallNormal(String, 0, LCD_WIDTH, 3);
+
+        ST7565_BlitFullScreen();
+        return;
+    }
+#endif
 
 #ifdef ENABLE_FEAT_F4HWN_ACTION_PICKER
     if (gActionPickerKey != 0) {

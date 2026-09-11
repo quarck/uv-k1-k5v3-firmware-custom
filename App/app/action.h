@@ -54,6 +54,20 @@ void ACTION_SwitchDemodul(void);
     #endif
 #endif
 
+#ifdef ENABLE_QRCK_SQL_ADJUST
+// Squelch-adjust overlay: a side function opens it, UP/DOWN then step the
+// squelch one point at a time until another key or the timeout closes it.
+// Unlike F + UP/DOWN (see processFKeyFunction), which only changes the level
+// for the current session, this one edits the stored setting.
+#define SQL_ADJUST_TIMEOUT_500MS 6u   // 3 s of no keys closes the overlay
+extern bool    gSqlAdjustMode;
+extern uint8_t gSqlAdjustTimeout_500ms;
+void ACTION_SqlAdjust(void);
+void SQL_ADJUST_Exit(void);
+// true when the key belongs to the overlay and must not be handled elsewhere
+bool SQL_ADJUST_ProcessKey(KEY_Code_t key, bool isPressed, bool isHeld);
+#endif
+
 #ifdef ENABLE_FEAT_F4HWN_ACTION_PICKER
 #define ACTION_PICKER_TIMEOUT_500MS 10u
 extern uint8_t gActionPickerKey;
