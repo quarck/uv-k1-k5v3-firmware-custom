@@ -318,6 +318,12 @@ int MENU_GetLimits(uint8_t menu_id, int32_t *pMin, int32_t *pMax)
             *pMax = 119;
             break;
 #endif
+#ifdef ENABLE_QRCK_CW_DECODER
+        case MENU_CWSPEED:
+            *pMin = 5;      // the range of speeds the decoder is seeded for
+            *pMax = 40;
+            break;
+#endif
 
         case MENU_MIC:
             //*pMin = 0;
@@ -748,6 +754,11 @@ void MENU_AcceptSetting(void)
         case MENU_CWPITCH:
             gEeprom.CW_PITCH     = gSubMenuSelection;
             gFlagReconfigureVfos = true;   // retune, the offset just changed
+            break;
+#endif
+#ifdef ENABLE_QRCK_CW_DECODER
+        case MENU_CWSPEED:
+            gEeprom.CW_SPEED = gSubMenuSelection;
             break;
 #endif
 
@@ -1262,6 +1273,11 @@ void MENU_ShowCurrentSetting(void)
 #ifdef ENABLE_QRCK_CW
         case MENU_CWPITCH:
             gSubMenuSelection = gEeprom.CW_PITCH;
+            break;
+#endif
+#ifdef ENABLE_QRCK_CW_DECODER
+        case MENU_CWSPEED:
+            gSubMenuSelection = gEeprom.CW_SPEED;
             break;
 #endif
 

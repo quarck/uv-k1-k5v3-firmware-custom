@@ -132,8 +132,9 @@ enum ACTION_OPT_t {
     ACTION_OPT_FOXHUNT        = 22,
     ACTION_OPT_BEACON         = 23,
     ACTION_OPT_SQL            = 24,
+    ACTION_OPT_CW             = 25,
 
-    ACTION_OPT_LEN            = 25
+    ACTION_OPT_LEN            = 26
 };
 
 #ifdef ENABLE_VOICE
@@ -238,6 +239,9 @@ typedef struct {
     uint8_t               MIC_SENSITIVITY;
 #ifdef ENABLE_QRCK_CW
     uint8_t               CW_PITCH;          // CW beat note, 10 Hz units (0..119)
+#endif
+#ifdef ENABLE_QRCK_CW_DECODER
+    uint8_t               CW_SPEED;          // expected CW speed, WPM (5..40)
 #endif
     uint8_t               MIC_SENSITIVITY_TUNING;
     uint16_t              CHAN_1_CALL;

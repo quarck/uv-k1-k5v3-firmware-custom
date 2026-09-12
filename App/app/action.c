@@ -58,6 +58,9 @@
 #ifdef ENABLE_FEAT_F4HWN_ACTION_PICKER
     #include "ui/menu.h"
 #endif
+#ifdef ENABLE_QRCK_CW_DECODER
+    #include "app/cw.h"
+#endif
 
 #if defined(ENABLE_FEAT_F4HWN_OVERLAY_APPS) && !defined(ENABLE_FEAT_F4HWN_BEAM)
 static void ACTION_Beam(void);
@@ -69,6 +72,10 @@ static void ACTION_Scan_FM(bool bRestart);
 
 #ifdef ENABLE_TX1750
 static void ACTION_1750(void);
+#endif
+
+#ifdef ENABLE_QRCK_CW_DECODER
+static void ACTION_Cw(void);
 #endif
 
 inline static void ACTION_ScanRestart() { ACTION_Scan(true); };
@@ -133,6 +140,9 @@ void (*const action_opt_table[ACTION_OPT_LEN])(void) = {
 #ifdef ENABLE_QRCK_SQL_ADJUST
     [ACTION_OPT_SQL] = &ACTION_SqlAdjust,
 #endif
+#ifdef ENABLE_QRCK_CW_DECODER
+    [ACTION_OPT_CW] = &ACTION_Cw,
+#endif
 };
 
 static_assert(ARRAY_SIZE(action_opt_table) == ACTION_OPT_LEN);
@@ -143,6 +153,7 @@ static_assert(ACTION_OPT_REMOVE_OFFSET == 21);
 static_assert(ACTION_OPT_FOXHUNT == 22);
 static_assert(ACTION_OPT_BEACON == 23);
 static_assert(ACTION_OPT_SQL == 24);
+static_assert(ACTION_OPT_CW == 25);
 
 bool ACTION_IsAvailable(uint8_t action)
 {
@@ -385,6 +396,14 @@ static void ACTION_Execute(uint8_t action)
     gBeepToPlay = BEEP_1KHZ_60MS_OPTIONAL;
     action_opt_table[action]();
 }
+
+#ifdef ENABLE_QRCK_CW_DECODER
+static void ACTION_Cw(void)
+{
+    APP_RunCw();
+    GUI_SelectNextDisplay(DISPLAY_MAIN);
+}
+#endif
 
 #ifdef ENABLE_QRCK_SQL_ADJUST
 

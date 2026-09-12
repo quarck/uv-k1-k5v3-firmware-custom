@@ -86,6 +86,7 @@
                 "ENABLE_FEAT_F4HWN_ACTION_PICKER": false,
                 "ENABLE_QRCK_SQL_ADJUST": false,
                 "ENABLE_QRCK_CW": false,
+                "ENABLE_QRCK_CW_DECODER": false,
                 "ENABLE_TX_BLOCKED": false,
                 "ENABLE_FEAT_F4HWN_RXTX_LOG": false,
                 "ENABLE_FEAT_F4HWN_RXTX_LOG_WRAP": false,
@@ -214,6 +215,7 @@
                 "ENABLE_VOX": false,
                 "ENABLE_QRCK_SQL_ADJUST": true,
                 "ENABLE_QRCK_CW": true,
+                "ENABLE_QRCK_CW_DECODER": true,
                 "EDITION_STRING": "Qrck",
                 "TARGET": "f4hwn.qrck"
             }

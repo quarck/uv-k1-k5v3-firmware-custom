@@ -100,6 +100,9 @@ const t_menu_item MenuList[] =
 #ifdef ENABLE_QRCK_CW
     {"CWTone",      MENU_CWPITCH       },
 #endif
+#ifdef ENABLE_QRCK_CW_DECODER
+    {"CWSpeed",     MENU_CWSPEED       },
+#endif
     {"MicBar",      MENU_MIC_BAR       },
     {"ChDisp",      MENU_MDF           }, // was "MDF"
     {"POnMsg",      MENU_PONMSG        },
@@ -503,6 +506,7 @@ const t_sidefunction gSubMenu_SIDEFUNCTIONS[] =
     {"FOX HUNT",        ACTION_OPT_FOXHUNT},
     {"BEACON",          ACTION_OPT_BEACON},
     {"SQL\nADJUST",     ACTION_OPT_SQL},
+    {"CW",              ACTION_OPT_CW},
 };
 
 const uint8_t gSubMenu_SIDEFUNCTIONS_size = ARRAY_SIZE(gSubMenu_SIDEFUNCTIONS);
@@ -613,6 +617,9 @@ static const uint8_t CatAudio[]   = {
 static const uint8_t CatRadio[]   = { MENU_SQL, MENU_STE, MENU_RP_STE, MENU_ROGER, MENU_VOX, MENU_TDR,
 #ifdef ENABLE_QRCK_CW
                                       MENU_CWPITCH,
+#endif
+#ifdef ENABLE_QRCK_CW_DECODER
+                                      MENU_CWSPEED,
 #endif
                                     };
 static const uint8_t CatDtmf[]    = { MENU_UPCODE, MENU_DWCODE, MENU_D_ST, MENU_D_PRE, MENU_D_LIVE_DEC };
@@ -980,6 +987,11 @@ void UI_DisplayMenu(void)
 #ifdef ENABLE_QRCK_CW
         case MENU_CWPITCH:    // stored in 10 Hz units, shown in Hz
             sprintf(String, "%dHz", gSubMenuSelection * 10);
+            break;
+#endif
+#ifdef ENABLE_QRCK_CW_DECODER
+        case MENU_CWSPEED:
+            sprintf(String, "%dWPM", gSubMenuSelection);
             break;
 #endif
 

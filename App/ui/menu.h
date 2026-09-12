@@ -165,7 +165,10 @@ enum
     MENU_SET_SAV,
 #endif
 #ifdef ENABLE_QRCK_CW
-    MENU_CWPITCH
+    MENU_CWPITCH,
+#endif
+#ifdef ENABLE_QRCK_CW_DECODER
+    MENU_CWSPEED
 #endif
 };
 

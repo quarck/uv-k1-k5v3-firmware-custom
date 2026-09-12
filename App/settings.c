@@ -294,6 +294,11 @@ gEeprom.FreqChannel[1]   = IS_FREQ_CHANNEL(Data16[5]) ? Data16[5] : (FREQ_CHANNE
     // would be silent anyway, which is why the menu starts at 1.
     gEeprom.CW_PITCH                       = (Data[0] >= 1 && Data[0] < 120) ? Data[0] : 70;
 #endif
+#ifdef ENABLE_QRCK_CW_DECODER
+    // Data[5] is likewise untouched by this firmware, and 0 (or an erased 0xFF)
+    // means never set, so it falls back to the default rather than to silence.
+    gEeprom.CW_SPEED                       = (Data[5] >= 5 && Data[5] <= 40) ? Data[5] : 15;
+#endif
     gEeprom.ROGER                          = (Data[1] <  3) ? Data[1] : ROGER_MODE_OFF;
     gEeprom.REPEATER_TAIL_TONE_ELIMINATION = (Data[2] < 11) ? Data[2] : 0;
     gEeprom.TX_VFO                         = (Data[3] <  2) ? Data[3] : 0;
@@ -1014,6 +1019,9 @@ void SETTINGS_SaveSettings(void)
     State[2] = gEeprom.REPEATER_TAIL_TONE_ELIMINATION;
     State[3] = gEeprom.TX_VFO;
     State[4] = gEeprom.BATTERY_TYPE;
+#ifdef ENABLE_QRCK_CW_DECODER
+    State[5] = gEeprom.CW_SPEED;
+#endif
 
     // 0x0ED0
     State = SecBuf + 0x40;
