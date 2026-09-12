@@ -51,6 +51,9 @@ enum VfoState_t
     VFO_STATE_TX_DISABLE,
     VFO_STATE_TIMEOUT,
     VFO_STATE_VOLTAGE_HIGH,
+#ifdef ENABLE_TX_BLOCKED
+    VFO_STATE_NO_LICENSE,   // ENABLE_TX_BLOCKED: this build never transmits
+#endif
     _VFO_STATE_LAST_ELEMENT
 };
 typedef enum VfoState_t VfoState_t;

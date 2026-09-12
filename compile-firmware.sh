@@ -16,7 +16,7 @@ set -euo pipefail
 # ---------------------------------------------
 
 IMAGE=uvk1-uvk5v3
-RELEASE_PRESETS=(Fusion Transfer FieldOps Labs Max Qrck)
+RELEASE_PRESETS=(Fusion Transfer FieldOps Labs Max Qrck QrckNoTx)
 FLASH_LIMIT=$((118 * 1024))
 RAM_LIMIT=$((16 * 1024))
 
@@ -29,9 +29,9 @@ EXTRA_ARGS=("$@")
 # ---------------------------------------------
 # Validate preset name
 # ---------------------------------------------
-if [[ ! "$PRESET" =~ ^(Custom|Fusion|Transfer|FieldOps|Labs|Max|Qrck|All)$ ]]; then
+if [[ ! "$PRESET" =~ ^(Custom|Fusion|Transfer|FieldOps|Labs|Max|Qrck|QrckNoTx|All)$ ]]; then
   echo "❌ Unknown preset: '$PRESET'"
-  echo "Valid presets are: Custom, Fusion, Transfer, FieldOps, Labs, Max, Qrck, All"
+  echo "Valid presets are: Custom, Fusion, Transfer, FieldOps, Labs, Max, Qrck, QrckNoTx, All"
   exit 1
 fi
 

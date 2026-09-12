@@ -972,6 +972,13 @@ void RADIO_SetupRegisters(bool switchToForeground)
 
 void RADIO_SetTxParameters(void)
 {
+#ifdef ENABLE_TX_BLOCKED
+    // Last barrier, and the widest: every route to the PA passes through here,
+    // including the ones that bypass FUNCTION_Select entirely. Returning before
+    // BK4819_PrepareTransmit leaves the chip in RX, so no RF is produced.
+    return;
+#endif
+
     BK4819_FilterBandwidth_t Bandwidth = gCurrentVfo->CHANNEL_BANDWIDTH;
 
     #ifdef ENABLE_FEAT_F4HWN_NARROWER
@@ -1243,6 +1250,12 @@ void RADIO_PrepareTX(void)
         // AM and other non-FM modes are receive-only.
         State = VFO_STATE_TX_DISABLE;
     }
+
+#ifdef ENABLE_TX_BLOCKED
+    // Receive-only build. Overrides every check above so the reason shown is
+    // always the same, whatever else might also have blocked the transmission.
+    State = VFO_STATE_NO_LICENSE;
+#endif
 
     if (State != VFO_STATE_NORMAL) {
         // TX not allowed

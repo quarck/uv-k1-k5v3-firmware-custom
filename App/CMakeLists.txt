@@ -247,6 +247,10 @@ endif()
 enable_feature(ENABLE_FEAT_F4HWN_ACTION_PICKER)
 enable_feature(ENABLE_QRCK_SQL_ADJUST)
 enable_feature(ENABLE_QRCK_CW)
+# Receive-only build: PTT never keys the transmitter. Enforced at four
+# independent points, see RADIO_PrepareTX / RADIO_SetTxParameters /
+# FUNCTION_Select / FOXHUNT_KeyOn.
+enable_feature(ENABLE_TX_BLOCKED)
 
 if(ENABLE_FEAT_F4HWN_ACTION_PICKER AND NOT ENABLE_FEAT_F4HWN)
     message(FATAL_ERROR "ENABLE_FEAT_F4HWN_ACTION_PICKER requires ENABLE_FEAT_F4HWN.")

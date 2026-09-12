@@ -819,6 +819,10 @@ static void FOXHUNT_EnterHunt(void)
 // to the main display (VfoStateStr).
 static VfoState_t FOXHUNT_TxState(void)
 {
+#ifdef ENABLE_TX_BLOCKED
+    return VFO_STATE_NO_LICENSE;
+#endif
+
     if (TX_freq_check(gTxVfo->pTX->Frequency) != 0 && gTxVfo->TX_LOCK)
         return VFO_STATE_TX_DISABLE;
     if (gBatteryDisplayLevel == 0)
@@ -959,6 +963,10 @@ static uint8_t FOXHUNT_MorseByte(char c)
 // near-continuous note. The PLL stays locked, so the carrier gate is only a GPIO toggle.
 static void FOXHUNT_KeyOn(void)
 {
+#ifdef ENABLE_TX_BLOCKED
+    return;   // receive-only build: never raise the carrier
+#endif
+
     BK4819_ExitTxMute();
     // Assert the carrier in both modes: a no-op in TONE (already up), but it re-arms the PA
     // if the mode was switched from CARR mid-window while the carrier happened to be down.
