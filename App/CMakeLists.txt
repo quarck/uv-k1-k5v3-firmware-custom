@@ -249,6 +249,8 @@ enable_feature(ENABLE_QRCK_SQL_ADJUST)
 enable_feature(ENABLE_QRCK_CW)
 # Receive-only Morse decoder, driven from the RSSI envelope.
 enable_feature(ENABLE_QRCK_CW_DECODER app/cw.c)
+# Reference page explaining the menu's abbreviated names.
+enable_feature(ENABLE_QRCK_MENU_HELP ui/help.c)
 # Receive-only build: PTT never keys the transmitter. Enforced at four
 # independent points, see RADIO_PrepareTX / RADIO_SetTxParameters /
 # FUNCTION_Select / FOXHUNT_KeyOn.

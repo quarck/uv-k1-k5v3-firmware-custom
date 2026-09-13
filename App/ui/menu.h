@@ -168,7 +168,10 @@ enum
     MENU_CWPITCH,
 #endif
 #ifdef ENABLE_QRCK_CW_DECODER
-    MENU_CWSPEED
+    MENU_CWSPEED,
+#endif
+#ifdef ENABLE_QRCK_MENU_HELP
+    MENU_HELP
 #endif
 };
 

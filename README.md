@@ -47,6 +47,7 @@ Special thanks to Jean-Cyrille F6IWW (3 times), Fabrice 14RC123, David F4BPP, Ol
 ## Table of Contents
 
 * [Main features and improvements from F4HWN](#main-features-and-improvements-from-f4hwn)
+* [Qrck edition](#qrck-edition)
 * [Main Features from Egzumer](#main-features-from-egzumer)
 * [Manual](#manual)
 * [Compiling and Building from Docker](#compiling-and-Building-from-docker)
@@ -79,6 +80,8 @@ Specialized presets extend Fusion for specific uses:
   not a strict superset of every other edition: features may be exchanged between releases
   to preserve stability and memory headroom.
 - **Custom** remains a manually configured build based directly on the hidden technical default.
+- **Qrck** and **QrckNoTx** are local editions maintained in this fork. See
+  [Qrck edition](#qrck-edition) below.
 
 ### Radio and signal handling
 
@@ -279,6 +282,102 @@ Specialized presets extend Fusion for specific uses:
 - Extensive code refactoring and memory optimization.
 - DTMF calling and the scrambler remain disabled in Fusion.
 - Legacy AM Fix support has been removed.
+
+## Qrck edition
+
+`Qrck` is a local edition maintained in this fork. It inherits everything from
+Fusion and adds the features below; `QrckNoTx` is the same edition built as a
+receive-only radio. Neither is part of the upstream F4HWN release set.
+
+Build them like any other preset:
+
+```bash
+./compile-firmware.sh Qrck
+./compile-firmware.sh QrckNoTx
+```
+
+Both are also built by `./compile-firmware.sh All`, and the edition name is shown
+on the boot screen and in the multiboot slot list, so the two are easy to tell
+apart when flashed side by side.
+
+### Squelch adjust overlay
+
+A `SQL ADJUST` side function, assignable to either side key or to a long press of
+`MENU`. It opens a full-screen overlay where `UP` and `DOWN` step the squelch one
+point at a time, with the level applied straight to the radio so the effect is
+audible while adjusting. Any other key, or three seconds of inactivity, closes it.
+
+Unlike the stock `F` + `UP`/`DOWN` adjustment, which is deliberately session-only,
+this overlay writes the new level to EEPROM: it is a settings change, not a
+temporary one. The `F` + `UP`/`DOWN` behaviour is unchanged and still available.
+
+### CW and CWF demodulation
+
+Two extra modulation modes in `Mode`, alongside FM, AM and USB:
+
+- **CW** receives on the SSB demodulator with the radio tuned off the carrier by
+  the beat-note pitch, so a keyed carrier is heard as a tone.
+- **CWF** receives through the FM discriminator instead, with no offset.
+
+The beat note is set by the `CWTone` menu entry, in Hz.
+
+### CW decoder
+
+A receive-only Morse decoder, opened by the `CW` side function. It reads the
+keying from the signal-strength envelope rather than from audio, which is what
+makes it possible at all: the demodulated audio on this hardware never reaches
+the processor, so nothing that needs a waveform — APRS, for instance — can work
+without a hardware modification. Morse is on/off keyed, so the envelope alone
+carries the message.
+
+The screen shows six scrolling lines of decoded text and a status line:
+
+```
+CW 22WPM ~18  240
+```
+
+which is the speed being decoded, the speed the decoder was seeded with, and the
+live envelope swing. That last number is the one to watch if nothing is being
+decoded: below the decoder's idle threshold the channel is treated as quiet and
+nothing is read at all.
+
+`UP` and `DOWN` change the expected speed, `MENU` or `*` clears the text, and
+`EXIT` leaves. PTT does nothing here — the screen never transmits.
+
+The decoder tracks the sender's real speed by itself; the `CWSpeed` menu entry
+(5-40 WPM) only says where to start. A good starting point matters at the
+extremes, where a badly wrong one splits a slow sender's characters apart or runs
+a fast sender's together before the estimate catches up.
+
+Known limits: a very noisy channel costs the first few characters before the
+decoder locks on, and a large mid-transmission speed change costs about a dozen
+elements to follow.
+
+### Menu help
+
+The last entry of the menu, `Help`, is a reference page for the menu's own
+abbreviated names — what `STE` or `Compnd` actually do. `UP` and `DOWN` move
+through the entries one at a time and `EXIT` leaves. Every menu item is covered.
+
+### Receive-only builds
+
+`QrckNoTx` is built with `ENABLE_TX_BLOCKED`, which makes the firmware incapable
+of transmitting. It is enforced at four independent points rather than one, so no
+single path can be missed:
+
+- `RADIO_PrepareTX` reports the refusal, shown on screen as `NO TX`;
+- `FUNCTION_Select` refuses to enter the transmit function;
+- `RADIO_SetTxParameters` returns before the chip is ever put into transmit —
+  this is the widest barrier, and the one that also covers the paths that never
+  reach `FUNCTION_Select`, such as BEAM, AirCopy and the overlay apps;
+- the Morse beacon's keying primitive refuses to raise the carrier.
+
+With the flag set, the transmit code is unreachable and the linker discards it:
+`BK4819_PrepareTransmit`, the only route into transmit mode on this chip, is
+absent from the built image.
+
+Note that this is a property of the build, not a setting. A normal `Qrck` build
+transmits as usual.
 
 ## Main features from Egzumer:
 * many of OneOfEleven mods:

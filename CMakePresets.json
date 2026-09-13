@@ -87,6 +87,7 @@
                 "ENABLE_QRCK_SQL_ADJUST": false,
                 "ENABLE_QRCK_CW": false,
                 "ENABLE_QRCK_CW_DECODER": false,
+                "ENABLE_QRCK_MENU_HELP": false,
                 "ENABLE_TX_BLOCKED": false,
                 "ENABLE_FEAT_F4HWN_RXTX_LOG": false,
                 "ENABLE_FEAT_F4HWN_RXTX_LOG_WRAP": false,
@@ -216,6 +217,7 @@
                 "ENABLE_QRCK_SQL_ADJUST": true,
                 "ENABLE_QRCK_CW": true,
                 "ENABLE_QRCK_CW_DECODER": true,
+                "ENABLE_QRCK_MENU_HELP": true,
                 "EDITION_STRING": "Qrck",
                 "TARGET": "f4hwn.qrck"
             }

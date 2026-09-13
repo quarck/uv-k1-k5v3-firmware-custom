@@ -1,0 +1,21 @@
+cd tools/serialtool
+
+python3 cli.py dump --calib -p /dev/ttyUSB0 ~/retevis-calib.dat
+
+python3 cli.py flash -p /dev/ttyUSB0 ../../build/Qrck/f4hwn.qrck.bin
+
+python3 cli.py restore --calib -p /dev/ttyUSB0 ~/retevis-calib.dat
+
+
+-- or --
+
+( cd tools/serialtool; python3 cli.py flash -p /dev/ttyUSB0 ../../build/Qrck/f4hwn.qrck.bin )
+
+Bonus: going back to stock, offline
+
+Quansheng's official .bin files are XOR-packed with a version field at 0x2000 and a CRC16 tail — the bootloader wants raw. Decode them first:
+
+python3 cli.py decode stock_firmware.bin        # -> stock_firmware.raw.bin
+python3 cli.py flash -p /dev/ttyACM0 stock_firmware.raw.bin
+
+

@@ -44,6 +44,9 @@
 #endif
 #include "ui/inputbox.h"
 #include "ui/menu.h"
+#ifdef ENABLE_QRCK_MENU_HELP
+    #include "ui/help.h"
+#endif
 #include "ui/ui.h"
 
 
@@ -312,6 +315,12 @@ int MENU_GetLimits(uint8_t menu_id, int32_t *pMin, int32_t *pMax)
             *pMax = 5;
             break;
 
+#ifdef ENABLE_QRCK_MENU_HELP
+        case MENU_HELP:
+            *pMin = 0;
+            *pMax = (int32_t)UI_HELP_Count() - 1;
+            break;
+#endif
 #ifdef ENABLE_QRCK_CW
         case MENU_CWPITCH:
             *pMin = 1;      // 0 is reserved to mean "never set", see SETTINGS_InitEEPROM
@@ -750,6 +759,10 @@ void MENU_AcceptSetting(void)
             gEeprom.REPEATER_TAIL_TONE_ELIMINATION = gSubMenuSelection;
             break;
 
+#ifdef ENABLE_QRCK_MENU_HELP
+        case MENU_HELP:
+            return;                  // a reference page, there is nothing to set
+#endif
 #ifdef ENABLE_QRCK_CW
         case MENU_CWPITCH:
             gEeprom.CW_PITCH     = gSubMenuSelection;
@@ -1270,6 +1283,11 @@ void MENU_ShowCurrentSetting(void)
             gSubMenuSelection = gEeprom.REPEATER_TAIL_TONE_ELIMINATION;
             break;
 
+#ifdef ENABLE_QRCK_MENU_HELP
+        case MENU_HELP:
+            gSubMenuSelection = 0;   // always open at the first entry
+            break;
+#endif
 #ifdef ENABLE_QRCK_CW
         case MENU_CWPITCH:
             gSubMenuSelection = gEeprom.CW_PITCH;

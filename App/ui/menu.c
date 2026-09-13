@@ -40,6 +40,9 @@
 #endif
 
 #include "helper.h"
+#ifdef ENABLE_QRCK_MENU_HELP
+    #include "help.h"
+#endif
 #include "inputbox.h"
 #include "menu.h"
 #include "ui.h"
@@ -183,6 +186,11 @@ const t_menu_item MenuList[] =
 #ifdef ENABLE_FEAT_F4HWN_MULTIBOOT
     {"SetCfg",      MENU_SET_CFG       }, // load another settings bank (reboots)
 #endif
+#endif
+#ifdef ENABLE_QRCK_MENU_HELP
+    // Deliberately the last entry before the hidden block, so it ends the list
+    // the user normally sees rather than disappearing behind the F Lock gate.
+    {"Help",        MENU_HELP          }, // what the abbreviated names mean
 #endif
     // hidden menu items from here on
     // enabled if pressing both the PTT and upper side button at power-on
@@ -866,6 +874,13 @@ void UI_DisplayMenu(void)
 #endif
 
     const int m = UI_MENU_GetCurrentMenuId();
+
+#ifdef ENABLE_QRCK_MENU_HELP
+    if (m == MENU_HELP && gIsInSubMenu) {
+        UI_HELP_Draw((uint8_t)gSubMenuSelection);
+        return;
+    }
+#endif
 
 #ifdef ENABLE_DTMF_CALLING
     char               Contact[16];
