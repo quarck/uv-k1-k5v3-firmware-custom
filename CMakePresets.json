@@ -214,6 +214,7 @@
             "inherits": "Fusion",
             "cacheVariables": {
                 "ENABLE_VOX": false,
+                "ENABLE_FEAT_F4HWN_RESUME_STATE": false,
                 "ENABLE_QRCK_SQL_ADJUST": true,
                 "ENABLE_QRCK_CW": true,
                 "ENABLE_QRCK_CW_DECODER": true,

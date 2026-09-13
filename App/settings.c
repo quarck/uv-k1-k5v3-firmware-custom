@@ -875,6 +875,29 @@ void SETTINGS_SaveVfoIndicesFlush(void)
     }
 }
 
+// The scan list block at 0x0F18 on its own: small enough to write whenever the
+// list changes, instead of dragging the whole settings set along behind it.
+static void SaveScanListBlock(void)
+{
+    uint8_t State[0x08];
+
+    PY25Q16_ReadBuffer(0x00A130, State, sizeof(State));
+
+    State[0] = (gEeprom.SCAN_LIST_DEFAULT & 0x7F)
+        | ((gEeprom.SCAN_LIST_ENABLED & 0x01) << 7);
+
+    State[1] = (uint8_t)(gEeprom.SCANLIST_PRIORITY_CH[0] & 0xFF);
+    State[2] = (uint8_t)(gEeprom.SCANLIST_PRIORITY_CH[0] >> 8);
+
+    State[3] = (uint8_t)(gEeprom.SCANLIST_PRIORITY_CH[1] & 0xFF);
+    State[4] = (uint8_t)(gEeprom.SCANLIST_PRIORITY_CH[1] >> 8);
+
+    State[5] = (uint8_t)(gEeprom.CHAN_1_CALL & 0xFF);
+    State[6] = (uint8_t)(gEeprom.CHAN_1_CALL >> 8);
+
+    PY25Q16_WriteBuffer(0x00A130, State, sizeof(State), false);
+}
+
 void SETTINGS_SaveSettings(void)
 {
     uint8_t *State;
@@ -1049,24 +1072,7 @@ void SETTINGS_SaveSettings(void)
     // -------------------------
     // 0f18 - 0f20
 
-    memset(SecBuf, 0xff, 0x08);
-
-    // 0x0F18
-    State = SecBuf;
-
-    State[0] = (gEeprom.SCAN_LIST_DEFAULT & 0x7F)
-        | ((gEeprom.SCAN_LIST_ENABLED & 0x01) << 7);
-
-    State[1] = (uint8_t)(gEeprom.SCANLIST_PRIORITY_CH[0] & 0xFF);
-    State[2] = (uint8_t)(gEeprom.SCANLIST_PRIORITY_CH[0] >> 8);
-
-    State[3] = (uint8_t)(gEeprom.SCANLIST_PRIORITY_CH[1] & 0xFF);
-    State[4] = (uint8_t)(gEeprom.SCANLIST_PRIORITY_CH[1] >> 8);
-
-    State[5] = (uint8_t)(gEeprom.CHAN_1_CALL & 0xFF);
-    State[6] = (uint8_t)(gEeprom.CHAN_1_CALL >> 8);
-
-    PY25Q16_WriteBuffer(0x00A130, SecBuf, 0x08, false);
+    SaveScanListBlock();
 
     // ---------------------
     // 0f40 - 0f48
@@ -1289,25 +1295,23 @@ void SETTINGS_UpdateChannel(uint16_t channel, const VFO_Info_t *pVFO, bool keep)
             ((gEeprom.SCAN_LIST_DEFAULT & 0x1F) << 3);
         PY25Q16_WriteBuffer(0x00A008, State, sizeof(State), false);
 
-        //
-
-        PY25Q16_ReadBuffer(0x00A130, State, sizeof(State));
-
-        State[0] = (gEeprom.SCAN_LIST_DEFAULT & 0x7F)
-            | ((gEeprom.SCAN_LIST_ENABLED & 0x01) << 7);
-
-        State[1] = (uint8_t)(gEeprom.SCANLIST_PRIORITY_CH[0] & 0xFF);
-        State[2] = (uint8_t)(gEeprom.SCANLIST_PRIORITY_CH[0] >> 8);
-
-        State[3] = (uint8_t)(gEeprom.SCANLIST_PRIORITY_CH[1] & 0xFF);
-        State[4] = (uint8_t)(gEeprom.SCANLIST_PRIORITY_CH[1] >> 8);
-
-        State[5] = (uint8_t)(gEeprom.CHAN_1_CALL & 0xFF);
-        State[6] = (uint8_t)(gEeprom.CHAN_1_CALL >> 8);
-
-        PY25Q16_WriteBuffer(0x00A130, State, sizeof(State), false);
+        SaveScanListBlock();
     }
 #endif
+
+// What the main screen calls when the scan list is changed there. Through the
+// menu the same fields ride along with the full SETTINGS_SaveSettings instead.
+void SETTINGS_SaveScanList(void)
+{
+#ifdef ENABLE_FEAT_F4HWN_RESUME_STATE
+    // SCAN_LIST_DEFAULT is shadowed in the resume byte at 0x0E7F, and the boot
+    // resume restores the list from that shadow rather than from the block
+    // below - so on a resume build the two copies have to move together.
+    SETTINGS_WriteCurrentState();
+#else
+    SaveScanListBlock();
+#endif
+}
 
 #ifdef ENABLE_FEAT_F4HWN_VOL
     void SETTINGS_WriteCurrentVol(void)

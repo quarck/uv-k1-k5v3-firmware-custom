@@ -338,6 +338,7 @@ void     SETTINGS_FactoryReset(bool bIsAll);
 void SETTINGS_SaveVfoIndices(void);
 void SETTINGS_SaveVfoIndicesFlush(void);
 void SETTINGS_SaveSettings(void);
+void SETTINGS_SaveScanList(void);
 void SETTINGS_SaveChannelName(uint16_t channel, const char * name);
 void SETTINGS_SaveChannel(uint16_t Channel, uint8_t VFO, const VFO_Info_t *pVFO, uint8_t Mode);
 void SETTINGS_SaveBatteryCalibration(const uint16_t * batteryCalibration);

@@ -578,9 +578,7 @@ static void MAIN_Key_DIGITS(KEY_Code_t Key, bool bKeyPressed, bool bKeyHeld)
             {
                 gEeprom.SCAN_LIST_DEFAULT = MR_CHANNELS_LIST + 1;
                 UI_MAIN_NotifyScanListChanged();
-            #ifdef ENABLE_FEAT_F4HWN_RESUME_STATE
-                SETTINGS_WriteCurrentState();
-            #endif
+                SETTINGS_SaveScanList();
                 return;
             }
 
@@ -598,9 +596,7 @@ static void MAIN_Key_DIGITS(KEY_Code_t Key, bool bKeyPressed, bool bKeyHeld)
                 }
                 UI_MAIN_NotifyScanListChanged();
 
-            #ifdef ENABLE_FEAT_F4HWN_RESUME_STATE
-                SETTINGS_WriteCurrentState();
-            #endif
+                SETTINGS_SaveScanList();
             }
 
             return;

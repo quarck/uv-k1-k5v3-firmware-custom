@@ -290,9 +290,7 @@ void ACTION_Scan(bool bRestart)
         RADIO_NextValidList(1);
         UI_MAIN_NotifyScanListChanged();
 
-        #ifdef ENABLE_FEAT_F4HWN_RESUME_STATE
-            SETTINGS_WriteCurrentState();
-        #endif
+        SETTINGS_SaveScanList();
 
         // jump to the next channel
         CHFRSCANNER_ManualResume(gScanStateDir);
