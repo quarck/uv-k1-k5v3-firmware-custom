@@ -880,23 +880,9 @@ static void ApplyDefaultSettings()
 
     // Keep frequency/range unchanged; recompute move step from fresh scan params.
     settings.frequencyChangeStep = GetBW() >> 1;
-}
 
-static void ResetSpectrumToDefaults()
-{
-    ApplyDefaultSettings();
-
-    RADIO_SetModulation(settings.modulationType);
-    BK4819_SetFilterBandwidth(settings.listenBw, false);
-
-    listenLowCount = 0;
-    listenPrevRssi = RSSI_MAX_VALUE;
-    scanStartFromLeft = true;
-
-    RearmRuntimeState();
     ResetBlacklist();
 }
-
 // Update things by keypress
 
 static uint16_t dbm2rssi(int dBm)
@@ -1857,9 +1843,72 @@ static void RenderStill()
     }
 }
 
+#define HELP_ROWS   7u
+#define HELP_PAGES  3u
+
+// Key reference, shown by holding MENU in the spectrum view. The 3x5 font
+// advances 4 px, so a row holds 32 characters and the screen holds 7 rows.
+static const char *const HelpPages[HELP_PAGES][HELP_ROWS] = {
+    {
+        "SPECTRUM KEYS       1/3  UP/DN",
+        "1 / 7   scan step",
+        "2 / 8   frequency move step",
+        "3 / 9   max dB, or sensitivity",
+        "4       bin count 16..128",
+        "5       type in a frequency",
+        "0 / 6   modulation / bandwidth",
+    },
+    {
+        "SPECTRUM KEYS       2/3  UP/DN",
+        "* / F   squelch level",
+        "UP/DOWN move centre frequency",
+        "SIDE1   blacklist this peak",
+        "SIDE2   backlight",
+        "MENU    auto / manual dB",
+        "M hold  this help",
+    },
+    {
+        "MONITOR KEYS        3/3  UP/DN",
+        "PTT     listen at the peak",
+        "UP/DOWN frequency, or menu value",
+        "SIDE1   hold the monitor open",
+        "MENU    gain menu LNA / PGA",
+        "EXIT    back, or leave the app",
+        "any key closes this help",
+    },
+};
+
+static bool    helpShown;
+static uint8_t helpPage;
+static bool    helpAwaitRelease;   // ignore the press that opened the page
+
+static void ShowHelp()
+{
+    helpShown = true;
+    helpPage = 0;
+    helpAwaitRelease = true;       // MENU is still down at this point
+    redrawScreen = true;
+}
+
+static void RenderHelp()
+{
+    for (uint8_t row = 0; row < HELP_ROWS; row++)
+    {
+        const char *line = HelpPages[helpPage][row];
+        if (line && line[0])
+            GUI_DisplaySmallest(line, 1, (uint8_t)(row * 8u), false, true);
+    }
+}
+
 static void Render()
 {
     UI_DisplayClear();
+
+    if (helpShown)
+    {
+        RenderHelp();
+        return;
+    }
 
     switch (currentState)
     {
@@ -1895,6 +1944,27 @@ static bool HandleUserInput()
         kbd.counter = 0;
     }
 
+    if (helpShown)
+    {
+        // The long press that opened the page is still held: wait for the
+        // release, or the very next repeat would close it again.
+        if (kbd.current == KEY_INVALID)
+            helpAwaitRelease = false;
+        else if (!helpAwaitRelease && kbd.counter == 3)
+        {
+            if (kbd.current == KEY_UP)
+                helpPage = (uint8_t)((helpPage + HELP_PAGES - 1u) % HELP_PAGES);
+            else if (kbd.current == KEY_DOWN)
+                helpPage = (uint8_t)((helpPage + 1u) % HELP_PAGES);
+            else
+                helpShown = false;
+
+            redrawScreen = true;
+        }
+
+        return true;
+    }
+
     // Spectrum MENU key handling:
     // - short press => action on release
     // - long press  => one-shot at counter==16
@@ -1927,7 +1997,7 @@ static bool HandleUserInput()
             {
                 menuKeyPendingShort = false;
                 menuKeyLongHandled = true;
-                ResetSpectrumToDefaults();
+                ShowHelp();
             }
             return true;
         }
@@ -2320,10 +2390,8 @@ void APP_RunSpectrum()
     if (gScanRangeStart)
     {
         currentFreq = initialFreq = gScanRangeStart;
-        // Keep saved spectrum step/count in scan-range mode.
-        // Previously this branch forced scanStepIndex from VFO step and
-        // stepsCount to STEPS_128 on every entry, which made the user think
-        // spectrum settings were not persisted.
+        // Keep the default step/count in scan-range mode rather than deriving
+        // them from the VFO, so entry is predictable here too.
         #ifdef ENABLE_FEAT_F4HWN_RESUME_STATE
             gEeprom.CURRENT_STATE = 5;
         #endif
@@ -2355,12 +2423,6 @@ void APP_RunSpectrum()
 #else
     BK4819_SetFilterBandwidth(settings.listenBw = BK4819_FILTER_BW_WIDE, false);
 #endif
-
-    // Reset dynamic spectrum state on every entry.
-    // Persisted settings are step/count/listenBW only; trigger and dB window
-    // are runtime values and should not carry over between sessions.
-    // manualSetFlag = false;
-    // settings.rssiTriggerLevel = RSSI_MAX_VALUE;
 
     RearmRuntimeState();
 

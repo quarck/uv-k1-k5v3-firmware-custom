@@ -13,7 +13,7 @@ read
 cmake --fresh --preset Max
 cmake --build --preset Max -j
 
-mkdir out
+mkdir -p out
 cp build/Qrck/*.bin out
 cp build/QrckNoTx/*.bin out
 cp build/Max/*.bin out
