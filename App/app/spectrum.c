@@ -96,12 +96,6 @@ uint32_t fMeasure = 0;
 uint32_t currentFreq, tempFreq;
 uint16_t rssiHistory[128];
 
-// Peak hold: tracks the highest Y per column with timed decay
-static uint8_t  peakHoldY[128];       // Peak Y value per display column (0=top)
-static uint8_t  peakHoldAge[64];      // Shared decay timer (1 per 2 columns)
-#define PEAK_HOLD_DELAY  15           // Sweeps before decay starts
-#define PEAK_HOLD_INIT   0xFF         // "no peak" sentinel (same as SPECTRUM_TOPY_SKIP)
-
 // Cached REG_30 value for scan steps: avoids re-reading it on every SetFScan()
 // call (saves 1 SPI read per step = fewer SPI bus events = less SPI-induced audio interference).
 static uint16_t scanReg30 = 0;
@@ -210,59 +204,6 @@ static const MenuOptions regOptions[] = {
 uint16_t statuslineUpdateTimer = 0;
 
 #ifdef ENABLE_FEAT_F4HWN_SPECTRUM
-static void LoadSettings()
-{
-    uint8_t Data[8] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
-    PY25Q16_ReadBuffer(0x00A148, Data, sizeof(Data));
-
-    // Data[0]: scanStepIndex (7:4), stepsCount (3:2), listenBw (1:0)
-    settings.scanStepIndex = (Data[0] >> 4) & 0x0F;
-    if (settings.scanStepIndex > 14)
-        settings.scanStepIndex = S_STEP_25_0kHz;
-
-    settings.stepsCount = (Data[0] >> 2) & 0x03;
-    if (settings.stepsCount > 3)
-        settings.stepsCount = STEPS_64;
-
-    settings.listenBw = Data[0] & 0x03;
-    if (settings.listenBw > 2)
-        settings.listenBw = BK4819_FILTER_BW_WIDE;
-
-    // Data[1]: manualSetFlag (0), autoSensitivity (2:1)
-    manualSetFlag = Data[1] & 0x01;
-    autoSensitivity = (Data[1] >> 1) & 0x03;
-    if (autoSensitivity >= AUTO_SENS_N_ELEM)
-        autoSensitivity = AUTO_SENS_NORMAL;
-
-    // Data[2]: dbMax encoded as (dbMax + 130) / 5
-    if (Data[2] <= 28)
-        settings.dbMax = (int)Data[2] * 5 - 130;
-
-    // Data[3]: rssiTriggerLevel as uint8_t (0xFF = auto)
-    settings.rssiTriggerLevel = (Data[3] == 0xFF) ? RSSI_MAX_VALUE : Data[3];
-
-    // Data[4] ~ Data[7] are free (for the moment...)
-}
-
-static void SaveSettings()
-{
-    uint8_t Data[8] = {0};
-    PY25Q16_ReadBuffer(0x00A148, Data, sizeof(Data));
-
-    // Data[0]: scanStepIndex (7:4), stepsCount (3:2), listenBw (1:0)
-    Data[0] = (settings.scanStepIndex << 4) | (settings.stepsCount << 2) | settings.listenBw;
-
-    // Data[1]: manualSetFlag (0), autoSensitivity (2:1)
-    Data[1] = (manualSetFlag & 0x01) | ((autoSensitivity & 0x03) << 1);
-
-    // Data[2]: dbMax encoded as (dbMax + 130) / 5
-    Data[2] = (uint8_t)((settings.dbMax + 130) / 5);
-
-    // Data[3]: rssiTriggerLevel as uint8_t (0xFF = auto)
-    Data[3] = (settings.rssiTriggerLevel == RSSI_MAX_VALUE) ? 0xFF : (uint8_t)settings.rssiTriggerLevel;
-
-    PY25Q16_WriteBuffer(0x00A148, Data, sizeof(Data), false);
-}
 #endif
 
 static uint8_t DBm2S(int dbm)
@@ -754,8 +695,6 @@ static void RelaunchScan()
 #endif
     preventKeypress = true;
     scanInfo.rssiMin = RSSI_MAX_VALUE;
-    memset(peakHoldY,   PEAK_HOLD_INIT, sizeof(peakHoldY));
-    memset(peakHoldAge, 0,              sizeof(peakHoldAge));
 
 }
 
@@ -909,8 +848,6 @@ static void RearmRuntimeState()
     settings.dbMin = -128;
     settings.dbMax = -97;
     memset(rssiHistory, 0, sizeof(rssiHistory));
-    memset(peakHoldY,   PEAK_HOLD_INIT, sizeof(peakHoldY));
-    memset(peakHoldAge, 0,              sizeof(peakHoldAge));
     rssiSmoothed = 0;
     manualDbMaxTimer = 0;
     
@@ -922,7 +859,9 @@ static void RearmRuntimeState()
 
 // Reset spectrum runtime/config to defaults while keeping current frequency
 // context (center/range). Persist only fields that are normally saved.
-static void ResetSpectrumToDefaults()
+// The settings a run starts from. Shared by entry and by the long-press reset,
+// so there is one definition of "default" rather than two that can drift.
+static void ApplyDefaultSettings()
 {
     manualSetFlag = false;
     autoSensitivity = AUTO_SENS_NORMAL;
@@ -937,8 +876,15 @@ static void ResetSpectrumToDefaults()
     settings.rssiTriggerLevel = RSSI_MAX_VALUE;
     autoNoiseFloor = RSSI_MAX_VALUE;
 
+    settings.dbMax = -50;
+
     // Keep frequency/range unchanged; recompute move step from fresh scan params.
     settings.frequencyChangeStep = GetBW() >> 1;
+}
+
+static void ResetSpectrumToDefaults()
+{
+    ApplyDefaultSettings();
 
     RADIO_SetModulation(settings.modulationType);
     BK4819_SetFilterBandwidth(settings.listenBw, false);
@@ -949,10 +895,6 @@ static void ResetSpectrumToDefaults()
 
     RearmRuntimeState();
     ResetBlacklist();
-
-#ifdef ENABLE_FEAT_F4HWN_SPECTRUM
-    SaveSettings();
-#endif
 }
 
 // Update things by keypress
@@ -1331,215 +1273,6 @@ uint8_t Rssi2Y(uint16_t rssi)
     return DrawingEndY - Rssi2PX(rssi, 0, DrawingEndY - DrawingTopY);
 }
 
-// Resolve the RSSI value at fractional sample index (Q8 fixed-point) using
-// linear interpolation. Blacklisted samples (RSSI_MAX_VALUE) are skipped by
-// falling back to the other neighbour; if both are blacklisted, returns
-// RSSI_MAX_VALUE so the caller can skip the column.
-static uint16_t InterpolateRssi(uint8_t bars, uint16_t pos256)
-{
-    uint8_t i = pos256 >> 8;
-    uint8_t frac = pos256 & 0xFF;
-
-    if (i >= bars - 1)
-    {
-        i = bars - 1;
-        frac = 0;
-    }
-
-    uint16_t rssiA = rssiHistory[i];
-    uint16_t rssiB = rssiHistory[(i + 1 < bars) ? (i + 1) : i];
-
-    if (IsRssiHistoryInvalid(rssiA) && IsRssiHistoryInvalid(rssiB))
-        return RSSI_MAX_VALUE;
-    if (IsRssiHistoryInvalid(rssiA))
-        return rssiB;
-    if (IsRssiHistoryInvalid(rssiB))
-        return rssiA;
-
-    return ((uint32_t)rssiA * (256 - frac) + (uint32_t)rssiB * frac) >> 8;
-}
-
-// Sentinel value in topY[] to mark a column that should not be drawn
-// (blacklisted RSSI sample on both neighbours).
-#define SPECTRUM_TOPY_SKIP 0xFF
-
-// Half-step bridging helper: compute crestTop/crestBot for column x
-// from a topY-like array.
-static void CalcCrest(const uint8_t *yArr, uint8_t x,
-                      uint8_t *crestTop, uint8_t *crestBot)
-{
-    uint8_t y0 = yArr[x];
-    *crestTop = y0;
-    *crestBot = y0;
-
-    bool goBack = true;
-    uint8_t n = 0;
-
-    if (x > 0) {
-        n = yArr[x - 1];
-        goto Start;
-    }
-
-Back:
-    goBack = false;
-
-    if (x + 1 < 128) {
-        n = yArr[x + 1];
-        goto Start;
-    }
-
-    return;
-
-Start:
-    if (n != SPECTRUM_TOPY_SKIP && n <= DrawingEndY) {
-        uint8_t mid = (y0 + n + 1) >> 1;
-        if (mid < *crestTop) *crestTop = mid;
-        if (mid > *crestBot) *crestBot = mid;
-    }
-
-    if (goBack)
-        goto Back;
-}
-
-// Draw the spectrum curve (solid crest + checkerboard body) and the peak hold
-// dotted trace.  Both use the same half-step bridging so the peak hold crest
-// shape mirrors the live crest exactly, just rendered with a dotted pattern.
-static void DrawSpectrumCurve(const uint8_t *topY)
-{
-    // Pass 1: update peakHoldY[] from topY[] before rendering so that the
-    // bridging in Pass 2 already sees fully-updated neighbour values.
-    for (uint8_t x = 0; x < 128; x++)
-    {
-        uint8_t y0 = topY[x];
-        if (y0 == SPECTRUM_TOPY_SKIP || y0 > DrawingEndY) {
-            peakHoldY[x] = PEAK_HOLD_INIT;
-            continue;
-        }
-
-        uint8_t ph = peakHoldY[x];
-        if (ph == PEAK_HOLD_INIT || y0 <= ph)
-        {
-            peakHoldY[x]        = y0;
-            peakHoldAge[x >> 1] = 0;
-        }
-        else
-        {
-            if (peakHoldAge[x >> 1] < PEAK_HOLD_DELAY) {
-                if (!(x & 1)) peakHoldAge[x >> 1]++;
-            } else {
-                ph += 2;
-                peakHoldY[x] = (ph <= DrawingEndY) ? ph : PEAK_HOLD_INIT;
-            }
-        }
-    }
-
-    // Pass 2: draw live curve (solid) then peak hold (dotted).
-    for (uint8_t x = 0; x < 128; x++)
-    {
-        // --- Live spectrum crest + body ---
-        uint8_t y0 = topY[x];
-        if (y0 != SPECTRUM_TOPY_SKIP && y0 <= DrawingEndY)
-        {
-            uint8_t crestTop, crestBot;
-            CalcCrest(topY, x, &crestTop, &crestBot);
-
-            // Solid crest contour.
-            for (uint8_t y = crestTop; y <= crestBot; y++)
-                PutPixel(x, y, true);
-
-            // Checkerboard body below the crest.
-            for (uint8_t y = crestBot + 1; y <= DrawingEndY; y++)
-                if (((x + y) & 1) == 0)
-                    PutPixel(x, y, true);
-        }
-
-        // --- Peak hold dotted crest ---
-        uint8_t ph = peakHoldY[x];
-        if (ph != PEAK_HOLD_INIT && ph <= DrawingEndY)
-        {
-            uint8_t phTop, phBot;
-            CalcCrest(peakHoldY, x, &phTop, &phBot);
-
-            // Dotted crest: checkerboard pattern over the full crest range.
-            for (uint8_t y = phTop; y <= phBot; y++)
-                if (((x + y) & 1) == 0)
-                    PutPixel(x, y, true);
-        }
-    }
-}
-
-// Spatial smoothing: 3-bin moving average on topY for a cleaner curve.
-// Only averages valid (non-SKIP) neighbours.
-static void SmoothTopY(uint8_t *topY)
-{
-    uint8_t prev = topY[0];
-    for (uint8_t x = 1; x < 127; x++)
-    {
-        uint8_t cur = topY[x];
-        uint8_t next = topY[x + 1];
-        if (cur == SPECTRUM_TOPY_SKIP) {
-            prev = cur;
-            continue;
-        }
-        uint16_t sum = cur;
-        uint8_t n = 1;
-        if (prev != SPECTRUM_TOPY_SKIP) { sum += prev; n++; }
-        if (next != SPECTRUM_TOPY_SKIP) { sum += next; n++; }
-        prev = cur;                       // save unsmoothed value for next iteration
-        topY[x] = (sum + n / 2) / n;     // rounded average
-    }
-}
-
-// Fill topY[0..127] by linear interpolation of `bars` RSSI samples across the
-// 128 display columns. Invalid (blacklisted) samples become SPECTRUM_TOPY_SKIP.
-static void BuildSpectrumTopY(uint8_t *topY, uint8_t bars)
-{
-    if (bars == 0)
-    {
-        for (uint8_t x = 0; x < 128; x++)
-            topY[x] = SPECTRUM_TOPY_SKIP;
-        return;
-    }
-
-    if (bars == 1)
-    {
-        uint16_t rssi = rssiHistory[0];
-        uint8_t y = IsRssiHistoryInvalid(rssi) ? SPECTRUM_TOPY_SKIP : Rssi2Y(rssi);
-        for (uint8_t x = 0; x < 128; x++)
-            topY[x] = y;
-        return;
-    }
-
-    // Q8 fixed-point: step256 / 256 advances one sample, multiplied by x.
-    uint16_t step256 = ((uint16_t)(bars - 1) << 8) / 127;
-
-    for (uint8_t x = 0; x < 128; x++)
-    {
-        uint16_t rssi = InterpolateRssi(bars, (uint16_t)x * step256);
-        topY[x] = (rssi == RSSI_MAX_VALUE) ? SPECTRUM_TOPY_SKIP : Rssi2Y(rssi);
-    }
-}
-
-static void BuildCurrentSpectrumTopY(uint8_t *topY)
-{
-#ifdef ENABLE_FEAT_F4HWN
-    uint16_t steps = GetStepsCount();
-    // max bars at 128 to correctly draw larger numbers of samples
-    uint8_t bars = (steps > 128) ? 128 : steps;
-#else
-    uint8_t bars = 128 >> settings.stepsCount;
-    if (bars == 0)
-        bars = 1;
-#endif
-
-    BuildSpectrumTopY(topY, bars);
-    // Skip cosmetic smoothing in manual mode so the rendered curve matches
-    // the raw RSSI used by the squelch detector — narrow peaks must visibly
-    // cross the trigger line when the radio opens the squelch.
-    if (!manualSetFlag)
-        SmoothTopY(topY);
-}
-
 static void DrawStatus()
 {
     if (manualSetFlag)
@@ -1705,22 +1438,52 @@ static void DrawNums()
         GUI_DisplaySmallest(String, 93, 49, false, true);
     }
 }
-
-static bool SpectrumColumnAtOrAboveY(const uint8_t *topY, uint8_t x, uint8_t y)
+// Number of RSSI samples held for the current sweep. A scan range can ask for
+// more measurements than the history has slots, in which case the sweep folds
+// them down (see GetHistorySlot) and 128 is the cap.
+static uint8_t GetBarCount()
 {
-    int8_t start = (x > 0) ? -1 : 0;
-    int8_t end = (x < 127) ? 1 : 0;
+    uint16_t steps = GetStepsCount();
+    return (steps > ARRAY_SIZE(rssiHistory)) ? ARRAY_SIZE(rssiHistory)
+                                             : (uint8_t)steps;
+}
 
-    for (int8_t dx = start; dx <= end; dx++)
+// Top of the bar for display column x, or 0xFF when there is nothing to draw.
+// Nearest neighbour on purpose: a column shows the sample it falls in and never
+// a value interpolated between two of them, so the display only ever shows what
+// was actually measured. For a power-of-two bar count this is the same mapping
+// as x >> stepsCount.
+static uint8_t BarTopY(uint8_t bars, uint8_t x)
+{
+    if (bars == 0)
+        return 0xFF;
+
+    uint16_t i = ((uint16_t)x * bars) / 128u;
+    if (i >= bars)
+        i = bars - 1u;
+
+    const uint16_t rssi = rssiHistory[i];
+    if (IsRssiHistoryInvalid(rssi))
+        return 0xFF;
+
+    const uint8_t y = Rssi2Y(rssi);
+    return (y <= DrawingEndY) ? y : 0xFF;
+}
+
+// Solid bar from the measured level down to the baseline, one per column.
+static void DrawSpectrumBars()
+{
+    const uint8_t bars = GetBarCount();
+
+    for (uint8_t x = 0; x < 128; x++)
     {
-        uint8_t n = x + dx;
-        if (topY[n] != SPECTRUM_TOPY_SKIP && topY[n] <= y + 1)
-            return true;
-        if (peakHoldY[n] != PEAK_HOLD_INIT && peakHoldY[n] <= y + 1)
-            return true;
-    }
+        const uint8_t top = BarTopY(bars, x);
+        if (top == 0xFF)
+            continue;
 
-    return false;
+        for (uint8_t y = top; y <= DrawingEndY; y++)
+            PutPixel(x, y, true);
+    }
 }
 
 static uint8_t GetScanStepTextWidth()
@@ -1733,16 +1496,20 @@ static uint8_t GetBwTextWidth()
     return (strlen(bwOptions[settings.listenBw]) * 4) + 4; // 4 px advance per char
 }
 
-static void DrawRssiTriggerLevel(const uint8_t *topY)
+static void DrawRssiTriggerLevel()
 {
     if (settings.rssiTriggerLevel == RSSI_MAX_VALUE || monitorMode)
         return;
     uint8_t scanStepTextWidth = GetScanStepTextWidth();
     uint8_t bwTextWidth = GetBwTextWidth();
     uint8_t y = Rssi2Y(settings.rssiTriggerLevel);
+    const uint8_t bars = GetBarCount();
     for (uint8_t x = 0; x < 128; x += 2)
     {
-        if (SpectrumColumnAtOrAboveY(topY, x, y))
+        // Skip columns the trace already covers, so the dotted line is not
+        // drawn on top of a bar.
+        const uint8_t top = BarTopY(bars, x);
+        if (top != 0xFF && top <= y + 1)
             continue;
         if (y <= 12 && (x < scanStepTextWidth + 2 || x >= 128 - bwTextWidth - 2))
             continue;
@@ -1891,9 +1658,6 @@ static void OnKeyDown(uint8_t key) {
             menuState = 0;
             break;
         }
-#ifdef ENABLE_FEAT_F4HWN_SPECTRUM
-        SaveSettings();
-#endif
 #ifdef ENABLE_FEAT_F4HWN_RESUME_STATE
         gEeprom.CURRENT_STATE = 0;
         SETTINGS_WriteCurrentState();
@@ -1991,15 +1755,12 @@ static void RenderSpectrum()
 {
     uint16_t steps = GetStepsCount();
     uint8_t arrowX = (steps > 1) ? (uint8_t)(128u * peak.i / (steps - 1)) : 0;
-    uint8_t topY[128];
-
-    BuildCurrentSpectrumTopY(topY);
     DrawTicks();
     DrawArrow(arrowX);
-    DrawSpectrumCurve(topY);
+    DrawSpectrumBars();
     DrawF(peak.f);
     DrawNums();
-    DrawRssiTriggerLevel(topY);
+    DrawRssiTriggerLevel();
 }
 
 static void RenderStill()
@@ -2551,9 +2312,9 @@ void APP_RunSpectrum()
 
     // TX here coz it always? set to active VFO
     vfo = gEeprom.TX_VFO;
-#ifdef ENABLE_FEAT_F4HWN_SPECTRUM
-    LoadSettings();
-#endif
+    // No persistence by design: every run starts from the defaults above, so
+    // the analyser always opens at a known 64 bins x 25 kHz.
+    ApplyDefaultSettings();
     // set the current frequency in the middle of the display
 #ifdef ENABLE_SCAN_RANGES
     if (gScanRangeStart)
