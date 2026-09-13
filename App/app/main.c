@@ -57,7 +57,21 @@ static VFO_Info_t gVfoBackup;
 static uint16_t   gScreenChannelBackup = 0;
 static uint16_t   gFreqChannelBackup = 0;
 
+// A frequency typed in digit by digit is zero-padded and tuned to right away,
+// but nothing reaches the EEPROM until the entry is applied - so a radio
+// switched off half way through "145.____" comes back up on the frequency it
+// had before, not on 145.0000.
+static bool freqInputPending;        // padded frequency is on the air, not stored yet
+static bool freqInputIndicesDirty;   // band switched in RAM, index not stored yet
+
+static void VFO_ForgetFreqInput(void) {
+    freqInputPending      = false;
+    freqInputIndicesDirty = false;
+}
+
 static void VFO_RestoreBackup(void) {
+    VFO_ForgetFreqInput();
+
     if (gHasVfoBackup) {
         const uint8_t Vfo = gEeprom.TX_VFO;
 
@@ -75,6 +89,43 @@ static void VFO_RestoreBackup(void) {
 
         gHasVfoBackup = false;
     }
+}
+
+// The typed frequency has been applied: store it, along with the band index if
+// the entry moved the VFO to another band. `saveChannel` is false where the
+// caller is about to store the channel itself anyway, so that tuning on from a
+// typed frequency costs one write rather than two.
+static void FreqInput_Commit(bool saveChannel)
+{
+    if (!freqInputPending)
+        return;
+
+    freqInputPending = false;
+
+    if (freqInputIndicesDirty) {
+        freqInputIndicesDirty = false;
+        SETTINGS_SaveVfoIndices();
+    }
+
+    // Written here rather than through gRequestSaveChannel, which is only acted
+    // on while a key is being processed: the commonest way to apply an entry is
+    // to walk away from it and let it time out.
+    if (saveChannel)
+        SETTINGS_SaveChannel(gTxVfo->CHANNEL_SAVE, gEeprom.TX_VFO, gTxVfo, 1);
+
+    gHasVfoBackup = false;
+}
+
+void MAIN_CommitFreqInput(void)
+{
+    FreqInput_Commit(true);
+}
+
+// The entry was abandoned: put the VFO back the way it was. Nothing was stored,
+// so there is only RAM to undo.
+void MAIN_CancelFreqInput(void)
+{
+    VFO_RestoreBackup();
 }
 
 static void toggle_chan_scanlist(void)
@@ -635,6 +686,13 @@ static void MAIN_Key_DIGITS(KEY_Code_t Key, bool bKeyPressed, bool bKeyHeld)
                 Frequency = frequencyBandTable[BAND_N_ELEM - 1].upper;
             }
 
+            // Same push out of a disabled 350 MHz band that RADIO_ConfigureChannel
+            // applies. It used to reach us on the rebound, when the saved channel
+            // was read back; the entry is no longer saved as you type, so do it here.
+            if (!gSetting_350EN && Frequency >= 35000000 && Frequency < 40000000) {
+                Frequency = 43300000;
+            }
+
             const FREQUENCY_Band_t band = FREQUENCY_GetBand(Frequency);
 
             if (gTxVfo->Band != band) {
@@ -642,7 +700,8 @@ static void MAIN_Key_DIGITS(KEY_Code_t Key, bool bKeyPressed, bool bKeyHeld)
                 gEeprom.ScreenChannel[Vfo] = band + FREQ_CHANNEL_FIRST;
                 gEeprom.FreqChannel[Vfo]   = band + FREQ_CHANNEL_FIRST;
 
-                SETTINGS_SaveVfoIndices();
+                // Deferred: the index is only stored once the entry is applied.
+                freqInputIndicesDirty = true;
 
                 RADIO_ConfigureChannel(Vfo, VFO_CONFIGURE_RELOAD);
             }
@@ -656,8 +715,18 @@ static void MAIN_Key_DIGITS(KEY_Code_t Key, bool bKeyPressed, bool bKeyHeld)
             }
 
             gTxVfo->freq_config_RX.Frequency = Frequency;
+            freqInputPending = true;
 
-            gRequestSaveChannel = 1;
+            // Tune to what is on the screen, straight out of RAM. The stock
+            // code got here the long way round - store the channel, then have
+            // RADIO_ConfigureChannel read it straight back - which is why a
+            // half-typed frequency ended up in the EEPROM.
+            RADIO_ConfigureSquelchAndOutputPower(gTxVfo);
+            gFlagReconfigureVfos = true;
+
+            if (gInputBoxIndex >= totalDigits)
+                FreqInput_Commit(true);     // entry complete: store it
+
             return;
 
         }
@@ -988,6 +1057,9 @@ static void MAIN_Key_UP_DOWN(bool bKeyPressed, bool bKeyHeld, int8_t Direction)
     uint16_t Channel = gEeprom.ScreenChannel[gEeprom.TX_VFO];
 
     if (gInputBoxIndex > 0) {
+        // Stepping on from the frequency just typed applies it; the step itself
+        // stores the channel, so only the band index is owed here.
+        FreqInput_Commit(false);
         gInputBoxIndex = 0;
         gHasVfoBackup = false;
     }

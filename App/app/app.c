@@ -1906,6 +1906,8 @@ void APP_TimeSlice500ms(void)
                 }
             }
 
+            MAIN_CommitFreqInput();
+
             cancelUserInputModes();
             gHasVfoBackup = false;
         }

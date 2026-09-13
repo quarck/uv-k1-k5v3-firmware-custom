@@ -22,5 +22,11 @@
 void MAIN_ProcessKeys(KEY_Code_t Key, bool bKeyPressed, bool bKeyHeld);
 void channelMoveSwitch(void);
 
+// Frequency typed in on the main screen is only written to the EEPROM once it
+// has been applied - by completing it, by letting it time out, or by tuning on
+// from it. Abandoning it puts the VFO back where it was.
+void MAIN_CommitFreqInput(void);
+void MAIN_CancelFreqInput(void);
+
 #endif
 

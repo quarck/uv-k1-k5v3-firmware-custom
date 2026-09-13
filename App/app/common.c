@@ -1,4 +1,5 @@
 #include "app/chFrScanner.h"
+#include "app/main.h"
 #include "audio.h"
 #include "functions.h"
 #include "misc.h"
@@ -28,12 +29,15 @@ void COMMON_SwitchVFOs()
 #ifdef ENABLE_SCAN_RANGES    
     gScanRangeStart = 0;
 #endif
-    gEeprom.TX_VFO ^= 1;
-
+    // Before TX_VFO moves: the restore puts the backup back into whichever VFO
+    // is current, and the entry being abandoned belongs to the one we are leaving.
     if (gInputBoxIndex > 0) {
+        MAIN_CancelFreqInput();
         gInputBoxIndex = 0;
         gHasVfoBackup = false;
     }
+
+    gEeprom.TX_VFO ^= 1;
 
     if (gEeprom.CROSS_BAND_RX_TX != CROSS_BAND_OFF)
         gEeprom.CROSS_BAND_RX_TX = gEeprom.TX_VFO + 1;
@@ -56,6 +60,7 @@ void COMMON_SwitchVFOMode()
 #endif
     {
         if (gInputBoxIndex > 0) {
+            MAIN_CancelFreqInput();
             gInputBoxIndex = 0;
             gHasVfoBackup = false;
         }
