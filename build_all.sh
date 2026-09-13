@@ -1,14 +1,8 @@
 cmake --fresh --preset Qrck
 cmake --build --preset Qrck -j
 
-echo "Hit enter"
-read
-
 cmake --fresh --preset QrckNoTx
 cmake --build --preset QrckNoTx -j
-
-echo "Hit enter"
-read
 
 cmake --fresh --preset Max
 cmake --build --preset Max -j
