@@ -80,14 +80,16 @@ const char *const bwOptions[] = {"25", "12.5", "6.25"};
 const uint8_t modulationTypeTuneSteps[] = {100, 50, 10};
 const uint8_t modTypeReg47Values[] = {1, 7, 5};
 
-SpectrumSettings settings = {.stepsCount = STEPS_64,
-                             .scanStepIndex = S_STEP_25_0kHz,
+// Superseded by ApplyDefaultSettings() on every entry; kept in step with it so
+// there is only one set of numbers to read.
+SpectrumSettings settings = {.stepsCount = STEPS_128,
+                             .scanStepIndex = S_STEP_12_5kHz,
                              .frequencyChangeStep = 80000,
                              .scanDelay = 3200,
                              .rssiTriggerLevel = 150,
                              .backlightState = true,
                              .bw = BK4819_FILTER_BW_WIDE,
-                             .listenBw = BK4819_FILTER_BW_WIDE,
+                             .listenBw = BK4819_FILTER_BW_NARROW,
                              .modulationType = false,
                              .dbMin = -130,
                              .dbMax = -50};
@@ -897,9 +899,9 @@ static void ApplyDefaultSettings()
     menuState = 0;
     lockAGC = false;
 
-    settings.scanStepIndex = S_STEP_25_0kHz;
-    settings.stepsCount = STEPS_64;
-    settings.listenBw = BK4819_FILTER_BW_WIDE;
+    settings.scanStepIndex = S_STEP_12_5kHz;
+    settings.stepsCount = STEPS_128;
+    settings.listenBw = BK4819_FILTER_BW_NARROW;
     settings.modulationType = gTxVfo->Modulation;
     settings.rssiTriggerLevel = RSSI_MAX_VALUE;
     autoNoiseFloor = RSSI_MAX_VALUE;
@@ -1464,8 +1466,8 @@ static uint8_t GetBarCount()
 
 // Screen row per bin, resolved once per render rather than once per column.
 // Rssi2Y runs iSqrt, whose Newton loop divides, and this core has no divider -
-// so at the usual 64 bins doing it per bin instead of per column halves the
-// work, which is also what pays for the max-hold outline.
+// so resolving it per bin rather than per column is worth it wherever there are
+// fewer bins than columns. At the default 128 bins the two are the same count.
 static uint8_t binY[128];
 
 // Nearest neighbour on purpose: a column shows the sample it falls in and never
@@ -2470,7 +2472,7 @@ void APP_RunSpectrum()
     // TX here coz it always? set to active VFO
     vfo = gEeprom.TX_VFO;
     // No persistence by design: every run starts from the defaults above, so
-    // the analyser always opens at a known 64 bins x 25 kHz.
+    // the analyser always opens at a known 128 bins x 12.5 kHz.
     ApplyDefaultSettings();
     // set the current frequency in the middle of the display
 #ifdef ENABLE_SCAN_RANGES
