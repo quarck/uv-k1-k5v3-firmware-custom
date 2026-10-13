@@ -104,7 +104,7 @@ const t_menu_item MenuList[] =
     {"CWTone",      MENU_CWPITCH       },
 #endif
 #ifdef ENABLE_QRCK_CW_DECODER
-    {"CWSpeed",     MENU_CWSPEED       },
+    {"CWWpm",       MENU_CWSPEED       },   // 6 chars max: name[7] must hold the NUL
 #endif
     {"MicBar",      MENU_MIC_BAR       },
     {"ChDisp",      MENU_MDF           }, // was "MDF"
