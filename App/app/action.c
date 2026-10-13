@@ -186,12 +186,23 @@ bool ACTION_IsAvailable(uint8_t action)
     return true;
 }
 
+// A side-key action that changes a stored VFO field has to write it here.
+// gRequestSaveChannel is only acted on immediately when the key is already
+// released (or the menu is open); a long-press action runs while the key is
+// still down, so its request goes to the deferred flagSaveChannel path and the
+// change never reaches the EEPROM. That is why the same action persists on a
+// short press and is forgotten on a long one.
+static void SaveVfoNow(VFO_Info_t *pVfo, uint8_t vfoIndex)
+{
+    SETTINGS_SaveChannel(pVfo->CHANNEL_SAVE, vfoIndex, pVfo, 1);
+}
+
 void ACTION_Power(void)
 {
     if (++gTxVfo->OUTPUT_POWER > OUTPUT_POWER_HIGH)
         gTxVfo->OUTPUT_POWER = OUTPUT_POWER_LOW1;
 
-    gRequestSaveChannel = 1;
+    SaveVfoNow(gTxVfo, gEeprom.TX_VFO);
 
     gRequestDisplayScreen = gScreenToDisplay;
 
@@ -327,12 +338,12 @@ void ACTION_Scan(bool bRestart)
 
 void ACTION_SwitchDemodul(void)
 {
-    gRequestSaveChannel = 1;
-
     gTxVfo->Modulation++;
 
     if(gTxVfo->Modulation == MODULATION_UKNOWN)
         gTxVfo->Modulation = MODULATION_FM;
+
+    SaveVfoNow(gTxVfo, gEeprom.TX_VFO);
 }
 
 
@@ -869,6 +880,12 @@ void ACTION_Wn(void)
     VFO_Info_t *pVfo = isRx ? gRxVfo : gTxVfo;
 
     pVfo->CHANNEL_BANDWIDTH = !pVfo->CHANNEL_BANDWIDTH;
+
+    // This one never asked for a save at all, so the bandwidth shortcut could
+    // not persist on a short press either. Note which VFO is stored: during RX
+    // the edit lands on gRxVfo, which is not gTxVfo under crossband or dual
+    // watch.
+    SaveVfoNow(pVfo, isRx ? gEeprom.RX_VFO : gEeprom.TX_VFO);
 
     if (pVfo->Modulation == MODULATION_AM)
     {
