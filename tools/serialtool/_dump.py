@@ -25,10 +25,15 @@ DUMP_ALL = 0xFF
 
 class EepromDump:
 
-    def __init__(self, ser: Serial, dump_what: int, dump_file: str):
+    def __init__(self, ser: Serial, dump_what: int, dump_file: str, window=None):
         self._ser = ser
         self._dump_what = dump_what
         self._dump_file = dump_file
+        # (offset, size) overriding dump_what, for reading a specific region.
+        # The config/calib presets cover the classic 8 KB map only; this fork
+        # keeps the VFO records at 0x9000 and channel attributes at 0x8000,
+        # both outside it.
+        self._window = window
         self._state = _Init(self)
         # self._dev_info = None
 
@@ -227,6 +232,12 @@ class _DumpEeprom(_State):
     def __init__(self, dump: EepromDump, timestamp: int):
         super().__init__(dump)
         self.timestamp = timestamp
+
+        if dump._window is not None:
+            self.offset, self.size = dump._window
+            self.retry = ll.Retry("an EEPROM read")
+            self.data = bytearray()
+            return
 
         what = dump._dump_what
         if DUMP_CONFIG == what:

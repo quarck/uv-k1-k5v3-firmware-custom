@@ -68,7 +68,23 @@ def main_dump(args, ser):
 
     signal.signal(signal.SIGINT, quit_handler)
 
-    dump = dd.EepromDump(ser, dump_what, dump_file)
+    window = None
+    if args.range:
+        try:
+            start_s, len_s = args.range.split(":", 1)
+            window = (int(start_s, 0), int(len_s, 0))
+        except ValueError:
+            print("--range wants START:LENGTH, eg. 0x9000:0xE8")
+            return
+        if window[0] < 0 or window[0] + window[1] > 0x10000:
+            print("--range must stay inside the 16-bit EEPROM address space")
+            return
+        if window[1] % 16:
+            print("--range length must be a multiple of 16")
+            return
+        print("Dump 0x{:04x}..0x{:04x}..".format(window[0], window[0] + window[1]))
+
+    dump = dd.EepromDump(ser, dump_what, dump_file, window)
     while (not quit_flag) and dump.loop():
         sleep(0)
 
@@ -276,6 +292,13 @@ def main():
         "-a",
         action="store_true",
         help="dump both configuration and calibration data. This is default",
+    )
+    ap_dump.add_argument(
+        "--range",
+        metavar="START:LENGTH",
+        help="dump an explicit EEPROM window instead of the config/calib "
+        "presets, eg. 0x9000:0xE8 for the VFO records. Length must be a "
+        "multiple of 16",
     )
     ap_dump.add_argument("file", help="output dump file")
 
